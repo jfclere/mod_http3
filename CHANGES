@@ -3,6 +3,27 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.2 (2026-04-03)
+--------------------
+  *) Added a modular CMake build system with structured support for
+     external and system dependencies, toolchains, packaging, and
+     shared build utilities.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added CMake modules for APR, APR-util, httpd, OpenSSL, nghttp3,
+     and GoogleTest integration.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Introduced initial cross-compilation and platform build support
+     for Linux x86_64, Linux aarch64, and Windows x86_64 via MinGW
+     toolchains (experimental).
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+  
+  *) Refactored Makefile and configuration.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+  
+  *) Integrated VS Code tasks and debugger configuration.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
 
 v0.0.1 (2026-04-02)
 --------------------

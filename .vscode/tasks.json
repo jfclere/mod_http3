@@ -1,0 +1,258 @@
+{
+    "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "buildType",
+            "type": "pickString",
+            "description": "Build type",
+            "options": [
+                "Debug",
+                "Release",
+                "RelWithDebInfo",
+                "MinSizeRel"
+            ],
+            "default": "Debug"
+        },
+        {
+            "id": "buildModule",
+            "type": "pickString",
+            "description": "Build Apache DSO module (BUILD_MODULE)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "ON"
+        },
+        {
+            "id": "buildExamples",
+            "type": "pickString",
+            "description": "Build example programs (BUILD_EXAMPLES)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "ON"
+        },
+        {
+            "id": "buildTests",
+            "type": "pickString",
+            "description": "Build test suite (BUILD_TESTS)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "ON"
+        },
+        {
+            "id": "enableUBSAN",
+            "type": "pickString",
+            "description": "Undefined Behavior Sanitizer (ENABLE_UBSAN)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "OFF"
+        },
+        {
+            "id": "enableASAN",
+            "type": "pickString",
+            "description": "Address Sanitizer (ENABLE_ASAN)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "OFF"
+        },
+        {
+            "id": "enableWerror",
+            "type": "pickString",
+            "description": "Treat warnings as errors (ENABLE_WERROR)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "OFF"
+        },
+        {
+            "id": "vendorSysPkgs",
+            "type": "pickString",
+            "description": "Vendor system dependencies (VENDOR_SYSTEM)",
+            "options": [
+                "ON",
+                "OFF"
+            ],
+            "default": "ON"
+        }
+    ],
+    "tasks": [
+        {
+            "label": "help",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-LH",
+                "-N",
+                "-B",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B",
+                "build",
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=${input:buildType}",
+                "-DBUILD_MODULE=${input:buildModule}",
+                "-DBUILD_EXAMPLES=${input:buildExamples}",
+                "-DBUILD_TESTS=${input:buildTests}",
+                "-DENABLE_UBSAN=${input:enableUBSAN}",
+                "-DENABLE_ASAN=${input:enableASAN}",
+                "-DENABLE_WERROR=${input:enableWerror}",
+                "-DVENDOR_SYSTEM=${input:vendorSysPkgs}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+            },
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": false
+            }
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--target",
+                "test"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "package",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--target",
+                "package"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "-rf",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "submodules",
+            "type": "shell",
+            "command": "git submodule sync --recursive && git submodule update --init --recursive && git submodule foreach --recursive \"git reset --hard || :\" && git submodule foreach --recursive \"git clean -ffdx || :\"",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+        {
+            "label": "format",
+            "type": "shell",
+            "command": "find mod_http3/ \\( -name '*.c' -o -name '*.cc' -o -name '*.h' -o -name '*.cpp' \\) -exec clang-format -style=file -i {} +",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        }
+    ]
+}
