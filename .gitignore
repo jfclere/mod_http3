@@ -1,0 +1,76 @@
+# CMake build output
+build/
+build-*/
+builddir/
+builddir-*/
+dependencies/*-*
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+cmake_install.cmake
+compile_commands.json
+
+# Compiled objects and libraries
+*.o
+*.a
+*.so
+*.so.*
+*.lo
+*.la
+*.slo
+
+# Sanitizer / coverage artefacts
+*.gcno
+*.gcda
+*.gcov
+
+# LSP / editor support
+.cache/
+.clangd/
+
+# IDE files
+.idea/
+*.sdf
+*.opensdf
+*.VC.opendb
+*.suo
+*.user
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+cmake-variants.yaml
+
+# Emacs
+*~
+.#*
+\#*#
+/.dir-locals.el
+
+# Vim
+*.swp
+
+
+# macOS
+.DS_Store
+
+# Test output
+*.log
+*.trs
+test-runs/
+
+# Python
+*.pyc
+__pycache__/
+test/__pycache__/
+test/*/__pycache__/
+test/*/*/__pycache__/
+.*_cache*/
+
+# Tags
+/tags
+/TAGS
+cscope.*
+
+# Other
+AGENTS.md
+.TODO

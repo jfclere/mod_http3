@@ -1,0 +1,33 @@
+mod_http3
+Copyright (c) 2026 The mod_http3 Project Authors.
+
+This product includes contributions from:
+  Jean-Frédéric Clere <jfclere apache.org> <jfclere gmail.com>
+  Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>
+
+This product makes use of the following third-party libraries:
+
+  Apache Portable Runtime (APR) (https://apr.apache.org/)
+  Copyright 2000-2026 The Apache Software Foundation
+  Licensed under the Apache License 2.0.
+
+  Apache Portable Runtime Utility (APU) (https://apr.apache.org/)
+  Copyright 2000-2026 The Apache Software Foundation
+  Licensed under the Apache License 2.0.
+
+  Google Test (https://github.com/google/googletest)
+  Copyright 2008-2026 Google Inc.
+  Licensed under the BSD 3-Clause License.
+
+  Apache HTTP Server (https://httpd.apache.org/)
+  Copyright 2000-2026 The Apache Software Foundation
+  Licensed under the Apache License 2.0.
+
+  nghttp3 (https://github.com/ngtcp2/nghttp3)
+  Copyright 2019-2026 nghttp3 contributors
+  Licensed under the MIT License.
+
+  OpenSSL (https://www.openssl.org/)
+  Copyright 1998-2026 The OpenSSL Project Authors
+  Licensed under the Apache License 2.0.
+

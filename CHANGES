@@ -1,0 +1,21 @@
+mod_http3 changes
+-------------------------------------------------------------------
+Changes are listed most recent first.
+Security-related entries always appear at the top of their release block.
+
+
+v0.0.1 (2026-04-02)
+--------------------
+
+  *) Pinned apr (1.7.x), apr-utils (1.6.x), googletest (1.17.x), httpd (latest),
+     nghttp3 (latest), openssl 3.5.x as git submodules.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added standard OSS project files (AUTHORS, CHANGES, COPYING, NOTICE).
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Moved loose files to a seperate directory.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) imported and squashed github.com/jfclere/openssl-h3-examples.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]

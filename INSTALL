@@ -1,0 +1,252 @@
+  MOD_HTTP3 INSTALLATION OVERVIEW
+
+  Quick Start
+  -----------
+
+  For complete build and configuration documentation, see CONFIGURATION.md.
+  For httpd runtime directives and VirtualHost setup, see CONFIGURATION_HTTPD.md.
+
+     $ git clone https://github.com/machine-moon/mod_http3.git
+     $ cd mod_http3
+     $ git submodule sync --recursive
+     $ git submodule update --init --recursive
+     $ cmake -B build
+     $ cmake --build build -j$(nproc)
+     $ cmake --build build -j$(nproc) --target tests
+
+  The first build downloads nothing -- all dependencies are compiled from
+  the git submodules already present in the repository (OpenSSL, APR,
+  APR-util, httpd, nghttp3, googletest).  This takes several minutes.
+  Subsequent builds reuse the cached result and are fast.
+
+  Build outputs:
+
+     build/lib/mod_http3.so        Apache DSO
+     build/bin/mod_http3_tests     Google Test binary
+
+  To install to a prefix (e.g. /opt/mod_http3):
+
+     $ cmake --install build --prefix /opt/mod_http3
+
+
+  Submodules
+  ----------
+
+  Submodules must be initialized before the first build:
+
+     $ git submodule sync --recursive
+     $ git submodule update --init --recursive
+
+  To reset submodules to a known-clean state (discards local changes):
+
+     $ git submodule foreach --recursive 'git reset --hard || :'
+     $ git submodule foreach --recursive 'git clean -ffdx || :'
+
+
+  Overriding Build Variables
+  --------------------------
+
+  Variables are passed to cmake with the -Dflag at configure time:
+
+     $ cmake -B build -DVARIABLE=VALUE
+
+  Multiple -Dflags may be combined:
+
+     $ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+
+  CMake caches variable values after the first configure run.  Pass
+  a variable again to change its value on a subsequent configure.
+
+  Boolean options accept any of the following values (case-insensitive):
+
+     True  values: ON  YES  TRUE  1  Y
+     False values: OFF NO   FALSE 0  N  IGNORE  NOTFOUND
+
+  Reference: https://cmake.org/cmake/help/latest/command/if.html#constant
+
+
+  Build Options
+  -------------
+
+  CMAKE_BUILD_TYPE        (default: Release)
+      Controls compiler optimization and debug symbol generation.
+      Accepted values: Debug, Release.
+
+      $ cmake -B build -DCMAKE_BUILD_TYPE=Debug
+
+  BUILD_MODULE            (default: ON)
+      Build mod_http3.so, the Apache DSO.  Disable to build only tests
+      or examples without the module itself.
+
+      $ cmake -B build -DBUILD_MODULE=OFF
+
+  BUILD_EXAMPLES          (default: ON)
+      Build standalone example programs (server, quic_client_test, etc.).
+
+      $ cmake -B build -DBUILD_EXAMPLES=OFF
+
+  BUILD_TESTS             (default: ON)
+      Build the Google Test suite.
+
+      $ cmake -B build -DBUILD_TESTS=OFF
+
+  ENABLE_ASAN             (default: OFF)
+      Enable Address Sanitizer.  Requires CMAKE_BUILD_TYPE=Debug.
+      The build will fail if ASAN is enabled with a non-Debug build type.
+
+      $ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+
+  ENABLE_UBSAN            (default: OFF)
+      Enable Undefined Behavior Sanitizer.  Requires CMAKE_BUILD_TYPE=Debug.
+
+      $ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_UBSAN=ON
+
+  ENABLE_WERROR           (default: OFF)
+      Treat all compiler warnings as errors (-Werror).
+
+      $ cmake -B build -DENABLE_WERROR=ON
+
+  VENDOR_SYSTEM           (default: ON)
+      ON  -- build OpenSSL, APR, APR-util, and httpd from submodules.
+             This is the default and requires no system packages beyond
+             a C compiler, CMake, and Ninja.
+      OFF -- find dependencies on PATH using find_package / config scripts.
+             Requires apxs, apr-1-config, apu-1-config, and OpenSSL >= 3.5.0
+             to be on PATH.
+
+      $ cmake -B build -DVENDOR_SYSTEM=OFF
+
+  DEPENDENCIES_PARALLEL   (default: 6)
+      Number of parallel jobs used when building vendored dependencies
+      (OpenSSL, APR, APR-util, httpd) with their own autotools build systems.
+      Increase to speed up the initial build on machines with many cores.
+
+      $ cmake -B build -DDEPENDENCIES_PARALLEL=16
+
+  DEPENDENCIES_DIRECTORY        (default: dependencies/)
+      Root directory where git submodule sources live.
+
+  DEPENDENCIES_OUTPUT_DIRECTORY (default: same as DEPENDENCIES_DIRECTORY)
+      Install prefix for vendored dependency build outputs.
+
+
+  Vendored Build (VENDOR_SYSTEM=ON)
+  ---------------------------------
+
+  CMake builds each system dependency from its submodule in this order:
+
+     1. OpenSSL  -> dependencies/openssl-dist/
+     2. APR      -> dependencies/apr-dist/
+     3. APR-util -> dependencies/apr-util-dist/
+     4. httpd    -> dependencies/httpd-dist/
+
+  Sentinel files (dependencies/<dep>-dist/.done) prevent redundant rebuilds.
+  Build logs are written to dependencies/<dep>-dist/logs/.
+
+  To force a rebuild of a single dependency, delete its sentinel and
+  re-run cmake configure:
+
+     $ rm dependencies/openssl-dist/.done
+     $ cmake -B build
+
+  nghttp3 and googletest are always built from submodules regardless of
+  VENDOR_SYSTEM.
+
+
+  System Packages Build (VENDOR_SYSTEM=OFF)
+  -----------------------------------------
+
+  The following tools must be on PATH:
+
+     apxs or apxs2       httpd >= 2.4.x, MMN >= 20211221
+     apr-1-config        APR >= 1.7.0
+     apu-1-config        APR-util >= 1.6.0
+     openssl             OpenSSL >= 3.5.0 (with QUIC support)
+
+  NOTE: Distro-packaged httpd (Ubuntu, Fedora, etc.) ships with an older
+  MMN and will be rejected at configure time.  You need httpd built from
+  the trunk branch.
+
+  For non-standard installation prefixes, prepend the relevant bin/
+  directories to PATH before configuring:
+
+     $ export PATH="/opt/httpd/bin:/opt/openssl/bin:$PATH"
+     $ cmake -B build -DVENDOR_SYSTEM=OFF
+     $ cmake --build build -j$(nproc)
+
+
+  Running Tests
+  -------------
+
+     $ cmake --build build -j$(nproc) --target tests
+
+  Or run the GTest binary directly (faster -- skips the rebuild check):
+
+     $ ./build/bin/mod_http3_tests
+
+  To run a single test or a pattern:
+
+     $ ./build/bin/mod_http3_tests --gtest_filter='Dependencies.OpenSSL_VersionAtLeast3_5'
+     $ ./build/bin/mod_http3_tests --gtest_filter='Dependencies.OpenSSL_*'
+
+  Sanitizer test runs:
+
+     $ rm -rf build
+     $ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+     $ cmake --build build -j$(nproc) --target tests
+
+     $ rm -rf build
+     $ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_UBSAN=ON
+     $ cmake --build build -j$(nproc) --target tests
+
+
+  Creating a Distribution Package
+  --------------------------------
+
+     $ cmake --build build -j$(nproc) --target package
+
+  Produces a ZIP and a TGZ archive in the build directory.
+
+
+  Installing
+  ----------
+
+  After a successful build, install the module and supporting files with:
+
+     $ cmake --install build --prefix /opt/mod_http3
+
+  This installs:
+
+     /opt/mod_http3/lib/mod_http3.so          Apache DSO
+     /opt/mod_http3/bin/mod_http3_tests        Google Test binary
+     /opt/mod_http3/share/mod_http3/docs/      CHANGES, LICENSE, NOTICE
+
+  The --prefix flag overrides the installation root at install time without
+  requiring a reconfigure.  You can use any path:
+
+     $ cmake --install build --prefix /usr/local
+     $ cmake --install build --prefix /opt/mod_http3
+
+  After installing, load the module in httpd.conf:
+
+     LoadModule http3_module /opt/mod_http3/lib/mod_http3.so
+
+
+  Inspecting the Configuration
+  ----------------------------
+
+  To print all CMake cache variables and their current values:
+
+     $ cmake -LH -N -B build
+
+
+  Postscript
+  ----------
+
+  For issues and bug reports, see the project repository.
+
+  For httpd runtime configuration (loading the module, VirtualHost
+  directives, certificate setup), see CONFIGURATION_HTTPD.md.
+
+  For a full reference of all build options and advanced configuration,
+  see CONFIGURATION.md.

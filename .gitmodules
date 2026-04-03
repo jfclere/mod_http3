@@ -1,0 +1,42 @@
+[submodule "dependencies/nghttp3"]
+	path = dependencies/nghttp3
+	url = https://github.com/ngtcp2/nghttp3.git
+	shallow = true
+	ignore = none
+	update = checkout
+	branch = main
+[submodule "dependencies/googletest"]
+	path = dependencies/googletest
+	url = https://github.com/google/googletest.git
+	shallow = true
+	ignore = none
+	update = checkout
+	branch = v1.17.x
+[submodule "dependencies/httpd"]
+	path = dependencies/httpd
+	url = https://github.com/apache/httpd.git
+	shallow = true
+	ignore = none
+	update = checkout
+	branch = trunk
+[submodule "dependencies/apr"]
+	path = dependencies/apr
+	url = https://github.com/apache/apr.git
+	shallow = true
+	ignore = untracked
+	update = checkout
+	branch = 1.7.x
+[submodule "dependencies/apr-util"]
+	path = dependencies/apr-util
+	url = https://github.com/apache/apr-util.git
+	shallow = true
+	ignore = untracked
+	update = checkout
+	branch = 1.6.x
+[submodule "dependencies/openssl"]
+	path = dependencies/openssl
+	url = https://github.com/openssl/openssl.git
+	shallow = true
+	ignore = none
+	update = checkout
+	branch = openssl-3.5
