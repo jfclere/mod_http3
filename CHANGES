@@ -3,6 +3,20 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.3 (2026-04-04)
+--------------------
+  *) Split into examples, include, and src directories.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added tests directory wih unit tests.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Removed references to mod_h3 in favor of mod_http3.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Removed autotools.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.2 (2026-04-03)
 --------------------
   *) Added a modular CMake build system with structured support for

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.2)
+project(mod_http3 VERSION 0.0.3)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -94,7 +94,6 @@ endif()
 # -- Tests --
 if(BUILD_TESTS)
   include(googletest)
-  enable_testing()
   add_subdirectory(mod_http3/tests)
 endif()
 

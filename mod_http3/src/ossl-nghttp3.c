@@ -1858,7 +1858,7 @@ static int process_h3response(struct h3ssl *h3ssl, struct ssl_id *ssl_ids, struc
         if (h3ctx->otherpart != NULL) {
             abort();
         }
-        /* We have read the buffer in mod_h3.c */
+        /* We have read the buffer in mod_http3.c */
         ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, s, "run_quic_server has APR_BUCKET_IS_HEAP %d %d", h3ctx, h3ctx->dataheaplen);
         h3req->ptr_data = h3ctx->dataheap;
         len = h3ctx->dataheaplen;

@@ -23,6 +23,7 @@
 #include "http_request.h"
 #include "util_script.h"
 #include "http_connection.h"
+#include <unistd.h>
 #ifdef HAVE_UNIX_SUEXEC
 #include "unixd.h"
 #endif
@@ -144,18 +145,18 @@ static int h3_post_config(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp, se
 /* WE DON'T NEED THAT ONE */
 static int h3_hook_process_connection(conn_rec* c)
 {
-    const char *is_mod_h3 = apr_table_get(c->notes, "IS_MOD_H3");
-    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_process_connection %d", is_mod_h3);
-    if (is_mod_h3 == NULL)
+    const char *is_mod_http3 = apr_table_get(c->notes, "IS_mod_http3");
+    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_process_connection %d", is_mod_http3);
+    if (is_mod_http3 == NULL)
         return DECLINED;
     return OK;
 }
 
 static int h3_hook_pre_connection(conn_rec *c, void *csd)
 {
-    const char *is_mod_h3 = apr_table_get(c->notes, "IS_MOD_H3");
-    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_pre_connection %d", is_mod_h3);
-    if (is_mod_h3 == NULL)
+    const char *is_mod_http3 = apr_table_get(c->notes, "IS_mod_http3");
+    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_pre_connection %d", is_mod_http3);
+    if (is_mod_http3 == NULL)
         return DECLINED;
     return OK;
 }
@@ -479,7 +480,7 @@ h3_conn_rec_t *create_connection(apr_pool_t *p, server_rec *s)
     c->client_addr = fake_from;
     c->client_ip = "127.0.0.1"; // Prevent core in ap_log_cerror?
     c->remote_host = "localhost";
-    apr_table_set(c->notes, "IS_MOD_H3", "1");
+    apr_table_set(c->notes, "IS_mod_http3", "1");
 
     c3 = (h3_conn_rec_t *)  apr_palloc(pool, sizeof(h3_conn_rec_t));
     c3->c = c;
@@ -572,9 +573,9 @@ static void h3_c1_child_stopping(apr_pool_t *pool, int graceful) {
 }
 static int h3_hook_http_create_request(request_rec *r)
 {
-    const char *is_mod_h3 = apr_table_get(r->connection->notes, "IS_MOD_H3");
-    ap_log_rerror(APLOG_MARK, APLOG_TRACE8, 0, r, "h3_hook_http_create_request %d", is_mod_h3);
-    if (is_mod_h3 == NULL)
+    const char *is_mod_http3 = apr_table_get(r->connection->notes, "IS_mod_http3");
+    ap_log_rerror(APLOG_MARK, APLOG_TRACE8, 0, r, "h3_hook_http_create_request %d", is_mod_http3);
+    if (is_mod_http3 == NULL)
         return DECLINED;
 
     ap_log_rerror(APLOG_MARK, APLOG_TRACE8, 0, r, "h3_hook_http_create_request status %d", r->status);
@@ -591,9 +592,9 @@ static int h3_hook_http_create_request(request_rec *r)
 }
 static void h3_filter_last(request_rec *r)
 {
-    const char *is_mod_h3 = apr_table_get(r->connection->notes, "IS_MOD_H3");
-    ap_log_rerror(APLOG_MARK, APLOG_TRACE8, 0, r, "h3_filter_last %d", is_mod_h3);
-    if (is_mod_h3 == NULL)
+    const char *is_mod_http3 = apr_table_get(r->connection->notes, "IS_mod_http3");
+    ap_log_rerror(APLOG_MARK, APLOG_TRACE8, 0, r, "h3_filter_last %d", is_mod_http3);
+    if (is_mod_http3 == NULL)
         return;
     ap_add_output_filter_handle(h3_proto_out_filter_handle, NULL, r, r->connection); /* HACKING */
 }
