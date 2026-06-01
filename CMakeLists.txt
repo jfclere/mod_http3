@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.7)
+project(mod_http3 VERSION 0.0.8)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -45,9 +45,13 @@ option(BUILD_TESTS "Build test suite" ON)
 
 option(ENABLE_UBSAN "Undefined Behavior Sanitizer" OFF)
 option(ENABLE_ASAN "Address Sanitizer" OFF)
-
 option(ENABLE_WERROR "Treat warnings as errors" OFF)
-option(VENDOR_SYSTEM "Vendor system dependencies" ON)
+
+option(BUILD_SSL "Build OpenSSL from source" OFF)
+option(BUILD_HTTPD "Build httpd (includes APR/APU) from source" OFF)
+
+set(WITH_SSL "" CACHE PATH "Path to OpenSSL installation prefix")
+set(WITH_HTTPD "" CACHE PATH "Path to httpd installation prefix (includes APR/APU)")
 
 # -- Generate version.h --
 include(version.h)
@@ -59,11 +63,9 @@ include(flags)
 # -- Dependencies Library --
 add_library(${PROJECT_NAME}-deps INTERFACE)
 include(nghttp3)
-include(apr)
-include(apu)
 include(openssl)
 include(httpd)
-target_link_libraries(${PROJECT_NAME}-deps INTERFACE nghttp3 apr apu openssl httpd)
+target_link_libraries(${PROJECT_NAME}-deps INTERFACE nghttp3 openssl httpd)
 
 # -- Core object library --
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS mod_http3/src/*.c)
@@ -80,10 +82,7 @@ if(BUILD_MODULE)
   set_target_properties(${PROJECT_NAME}-lib PROPERTIES PREFIX "" OUTPUT_NAME "${PROJECT_NAME}")
   apply_target_flags(${PROJECT_NAME}-lib)
 
-  install(
-    TARGETS ${PROJECT_NAME}-lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION lib COMPONENT module)
+  install(TARGETS ${PROJECT_NAME}-lib LIBRARY DESTINATION lib64/httpd/modules)
 endif()
 
 # -- Examples --
@@ -93,14 +92,17 @@ endif()
 
 # -- Tests --
 if(BUILD_TESTS)
+  enable_testing()
   include(googletest)
   add_subdirectory(mod_http3/tests)
 endif()
 
 # -- Installation --
-install(FILES "CHANGES" DESTINATION share/mod_http3/docs)
-install(FILES "LICENSE" DESTINATION share/mod_http3/docs)
-install(FILES "NOTICE" DESTINATION share/mod_http3/docs)
+install(FILES "10-h3.conf" DESTINATION etc/httpd/conf.modules.d)
+install(FILES "CHANGES" DESTINATION share/doc/mod_http3)
+install(FILES "NOTICE" DESTINATION share/doc/mod_http3)
+install(FILES "AUTHORS" DESTINATION share/doc/mod_http3)
+install(FILES "LICENSE" DESTINATION share/licenses/mod_http3)
 
 # -- Summary --
 message(STATUS "")
@@ -119,9 +121,19 @@ message(STATUS "  BUILD_TESTS    : ${BUILD_TESTS}")
 message(STATUS "")
 message(STATUS "  ENABLE_UBSAN   : ${ENABLE_UBSAN}")
 message(STATUS "  ENABLE_ASAN    : ${ENABLE_ASAN}")
-message(STATUS "")
 message(STATUS "  ENABLE_WERROR  : ${ENABLE_WERROR}")
-message(STATUS "  VENDOR_SYSTEM  : ${VENDOR_SYSTEM}")
+message(STATUS "")
+if(BUILD_SSL)
+    message(STATUS "  BUILD_SSL      : ${BUILD_SSL}")
+else()
+    message(STATUS "  WITH_SSL       : ${WITH_SSL}")
+endif()
+
+if(BUILD_HTTPD)
+    message(STATUS "  BUILD_HTTPD    : ${BUILD_HTTPD}")
+else()
+    message(STATUS "  WITH_HTTPD     : ${WITH_HTTPD}")
+endif()
 message(STATUS "")
 
 # -- CPACK --

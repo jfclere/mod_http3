@@ -74,3 +74,4 @@ cscope.*
 # Other
 AGENTS.md
 .TODO
+certs/

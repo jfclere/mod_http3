@@ -3,6 +3,15 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.8 (2026-06-01)
+--------------------
+  *) Updated installation paths to follow conventions for module,
+     documentation, license, and configuration file placement.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Removed unused helper scripts and test assets.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.7 (2026-04-10)
 --------------------
   *) Added configuration and dependency documentation and updated README.
