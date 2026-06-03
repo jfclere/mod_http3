@@ -11,7 +11,7 @@ set(APU_VERSION_MIN "1.6.0")
 
 # -- Find APU config tool --
 
-if(VENDOR_SYSTEM)
+if(BUILD_HTTPD)
 
   # Build apu from source if not already done
   if(NOT EXISTS "${APU_OUTPUT_DIRECTORY}/.done")
@@ -29,7 +29,7 @@ if(VENDOR_SYSTEM)
         OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log"
         ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log")
       if(NOT _APU_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "apu distclean: failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log")
+        message(FATAL_ERROR "[apu] error: distclean failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log")
       endif()
     endif()
 
@@ -42,7 +42,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-buildconf.log"
       ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-buildconf.log")
     if(NOT _APU_BUILDCONF_RESULT EQUAL 0)
-      message(FATAL_ERROR "apu buildconf: failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-buildconf.log")
+      message(FATAL_ERROR "[apu] error: buildconf failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-buildconf.log")
     endif()
 
     execute_process(
@@ -52,7 +52,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log"
       ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log")
     if(NOT _APU_CONFIGURE_RESULT EQUAL 0)
-      message(FATAL_ERROR "apu configure: failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log")
+      message(FATAL_ERROR "[apu] error: configure failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log")
     endif()
 
     message(STATUS "[apu] Building (${DEPENDENCIES_PARALLEL} jobs)")
@@ -64,7 +64,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-build.log"
       ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-build.log")
     if(NOT _APU_BUILD_RESULT EQUAL 0)
-      message(FATAL_ERROR "apu build: failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-build.log")
+      message(FATAL_ERROR "[apu] error: build failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-build.log")
     endif()
 
     message(STATUS "[apu] Installing to ${APU_OUTPUT_DIRECTORY}")
@@ -76,7 +76,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-install.log"
       ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-install.log")
     if(NOT _APU_INSTALL_RESULT EQUAL 0)
-      message(FATAL_ERROR "apu install: failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-install.log")
+      message(FATAL_ERROR "[apu] error: install failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-install.log")
     endif()
 
     string(TIMESTAMP _APU_DONE_TIME "%Y-%b-%d_%H-%M-%S")
@@ -90,15 +90,17 @@ if(VENDOR_SYSTEM)
     NAMES apu-1-config apu-config
     HINTS "${APU_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
-else()
-  find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config NO_CACHE)
+elseif(WITH_HTTPD)
+  find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APU_CONFIG_EXECUTABLE)
-      message(FATAL_ERROR
-          "apu-config not found. "
-          "Install libaprutil1-dev (Debian/Ubuntu) or apr-util-devel (RHEL/Fedora), "
-          "or set VENDOR_SYSTEM=ON to vendor system dependencies from source."
-      )
+    message(FATAL_ERROR
+        "[apu] error: apu-config not found at WITH_HTTPD=${WITH_HTTPD}."
+    )
   endif()
+else()
+  message(FATAL_ERROR
+      "[apu] error: set BUILD_HTTPD=ON to build from source or provide WITH_HTTPD=/path/to/httpd."
+  )
 endif()
 
 # -- Extract APU information --
@@ -112,7 +114,7 @@ execute_process(
 )
 if(NOT APU_VERSION_RESULT EQUAL 0 OR NOT APU_VERSION OR APU_VERSION VERSION_LESS APU_VERSION_MIN)
   message(FATAL_ERROR
-    "httpd: APU_CONFIG did not report a valid version\n"
+    "[apu] error: APU_CONFIG did not report a valid version\n"
     "  APU_CONFIG  = ${APU_CONFIG_EXECUTABLE}\n"
     "  APU_VERSION = ${APU_VERSION}\n"
     "  result      = ${APU_VERSION_RESULT}")
@@ -127,7 +129,7 @@ execute_process(
 )
 if(NOT APU_INCLUDEDIR_RESULT EQUAL 0 OR NOT APU_INCLUDE_DIR OR NOT EXISTS "${APU_INCLUDE_DIR}/apu.h")
   message(FATAL_ERROR
-    "httpd: APU_CONFIG did not report a valid include dir\n"
+    "[apu] error: APU_CONFIG did not report a valid include dir\n"
     "  APU_CONFIG = ${APU_CONFIG_EXECUTABLE}\n"
     "  includedir = ${APU_INCLUDE_DIR}\n"
     "  result     = ${APU_INCLUDEDIR_RESULT}")
@@ -142,13 +144,13 @@ execute_process(
 )
 if(NOT APU_LINK_FLAGS_RESULT EQUAL 0 OR NOT APU_LINK_FLAGS)
   message(FATAL_ERROR
-    "httpd: APU_CONFIG did not report valid link flags\n"
+    "[apu] error: APU_CONFIG did not report valid link flags\n"
     "  APU_CONFIG = ${APU_CONFIG_EXECUTABLE}\n"
     "  link flags = ${APU_LINK_FLAGS}\n"
     "  result     = ${APU_LINK_FLAGS_RESULT}")
 endif()
 
-message(STATUS "Found APU (${APU_VERSION}): ${APU_INCLUDE_DIR}")
+message(STATUS "[apu] found (${APU_VERSION}): ${APU_INCLUDE_DIR}")
 
 separate_arguments(APU_LINK_FLAGS_LIST UNIX_COMMAND "${APU_LINK_FLAGS}")
 string(REGEX MATCH "-L([^ \t]+)" APU_L_MATCH "${APU_LINK_FLAGS}")

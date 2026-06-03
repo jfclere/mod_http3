@@ -11,7 +11,7 @@ set(APR_VERSION_MIN "1.7.0")
 
 # -- Find APR config tool --
 
-if(VENDOR_SYSTEM)
+if(BUILD_HTTPD)
 
   # Build apr from source if not already done
   if(NOT EXISTS "${APR_OUTPUT_DIRECTORY}/.done")
@@ -29,7 +29,7 @@ if(VENDOR_SYSTEM)
         OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log"
         ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log")
       if(NOT _APR_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "apr distclean: failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log")
+        message(FATAL_ERROR "[apr] error: distclean failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log")
       endif()
     endif()
 
@@ -42,7 +42,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-buildconf.log"
       ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-buildconf.log")
     if(NOT _APR_BUILDCONF_RESULT EQUAL 0)
-      message(FATAL_ERROR "apr buildconf: failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-buildconf.log")
+      message(FATAL_ERROR "[apr] error: buildconf failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-buildconf.log")
     endif()
 
     execute_process(
@@ -52,7 +52,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log"
       ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log")
     if(NOT _APR_CONFIGURE_RESULT EQUAL 0)
-      message(FATAL_ERROR "apr configure: failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log")
+      message(FATAL_ERROR "[apr] error: configure failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log")
     endif()
 
     message(STATUS "[apr] Building (${DEPENDENCIES_PARALLEL} jobs)")
@@ -64,7 +64,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-build.log"
       ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-build.log")
     if(NOT _APR_BUILD_RESULT EQUAL 0)
-      message(FATAL_ERROR "apr build: failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-build.log")
+      message(FATAL_ERROR "[apr] error: build failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-build.log")
     endif()
 
     message(STATUS "[apr] Installing to ${APR_OUTPUT_DIRECTORY}")
@@ -76,7 +76,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-install.log"
       ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-install.log")
     if(NOT _APR_INSTALL_RESULT EQUAL 0)
-      message(FATAL_ERROR "apr install: failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-install.log")
+      message(FATAL_ERROR "[apr] error: install failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-install.log")
     endif()
 
     string(TIMESTAMP _APR_DONE_TIME "%Y-%b-%d_%H-%M-%S")
@@ -90,15 +90,17 @@ if(VENDOR_SYSTEM)
     NAMES apr-1-config apr-config
     HINTS "${APR_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
-else()
-  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config NO_CACHE)
+elseif(WITH_HTTPD)
+  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APR_CONFIG_EXECUTABLE)
-      message(FATAL_ERROR
-          "apr-config not found. "
-          "Install libapr1-dev (Debian/Ubuntu) or apr-devel (RHEL/Fedora), "
-          "or set VENDOR_SYSTEM=ON to vendor system dependencies from source."
-      )
+    message(FATAL_ERROR
+        "[apr] error: apr-config not found at WITH_HTTPD=${WITH_HTTPD}."
+    )
   endif()
+else()
+  message(FATAL_ERROR
+      "[apr] error: set BUILD_HTTPD=ON to build from source or provide WITH_HTTPD=/path/to/httpd."
+  )
 endif()
 
 # -- Extract APR information --
@@ -112,7 +114,7 @@ execute_process(
 )
 if(NOT APR_VERSION_RESULT EQUAL 0 OR NOT APR_VERSION OR APR_VERSION VERSION_LESS APR_VERSION_MIN)
   message(FATAL_ERROR
-    "apr: APR_CONFIG did not report a valid version\n"
+    "[apr] error: APR_CONFIG did not report a valid version\n"
     "  APR_CONFIG  = ${APR_CONFIG_EXECUTABLE}\n"
     "  APR_VERSION = ${APR_VERSION}\n"
     "  result      = ${APR_VERSION_RESULT}")
@@ -127,7 +129,7 @@ execute_process(
 )
 if(NOT APR_INCLUDEDIR_RESULT EQUAL 0 OR NOT APR_INCLUDE_DIR OR NOT EXISTS "${APR_INCLUDE_DIR}/apr.h")
   message(FATAL_ERROR
-    "apr: APR_CONFIG did not report a valid include dir\n"
+    "[apr] error: APR_CONFIG did not report a valid include dir\n"
     "  APR_CONFIG = ${APR_CONFIG_EXECUTABLE}\n"
     "  includedir = ${APR_INCLUDE_DIR}\n"
     "  result     = ${APR_INCLUDEDIR_RESULT}")
@@ -142,13 +144,13 @@ execute_process(
 )
 if(NOT APR_LINK_FLAGS_RESULT EQUAL 0 OR NOT APR_LINK_FLAGS)
   message(FATAL_ERROR
-    "apr: APR_CONFIG did not report valid link flags\n"
+    "[apr] error: APR_CONFIG did not report valid link flags\n"
     "  APR_CONFIG = ${APR_CONFIG_EXECUTABLE}\n"
     "  link flags = ${APR_LINK_FLAGS}\n"
     "  result     = ${APR_LINK_FLAGS_RESULT}")
 endif()
 
-message(STATUS "Found APR (${APR_VERSION}): ${APR_INCLUDE_DIR}")
+message(STATUS "[apr] found (${APR_VERSION}): ${APR_INCLUDE_DIR}")
 
 separate_arguments(APR_LINK_FLAGS_LIST UNIX_COMMAND "${APR_LINK_FLAGS}")
 string(REGEX MATCH "-L([^ \t]+)" APR_L_MATCH "${APR_LINK_FLAGS}")

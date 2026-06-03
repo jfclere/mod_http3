@@ -36,7 +36,7 @@ elseif(TARGET gtest)
   set(_GOOGLETEST_LIBS gtest)
   add_library(googletest ALIAS gtest)
 else()
-  message(FATAL_ERROR "googletest: add_subdirectory did not produce 'gtest' or 'gmock' target")
+  message(FATAL_ERROR "[googletest] error: add_subdirectory did not produce 'gtest' or 'gmock' target")
 endif()
 
 set_target_properties(${_GOOGLETEST_LIBS} PROPERTIES 

@@ -9,7 +9,7 @@ set(OPENSSL_OUTPUT_DIRECTORY "${DEPENDENCIES_OUTPUT_DIRECTORY}/openssl-dist")
 
 set(OPENSSL_VERSION_MIN "3.5.0")
 
-if(VENDOR_SYSTEM)
+if(BUILD_SSL)
 
   # Build OpenSSL from source if not already done
   if(NOT EXISTS "${OPENSSL_OUTPUT_DIRECTORY}/.done")
@@ -28,7 +28,7 @@ if(VENDOR_SYSTEM)
         OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log"
         ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log")
       if(NOT _OPENSSL_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "openssl distclean: failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log")
+        message(FATAL_ERROR "[openssl] error: distclean failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log")
       endif()
     endif()
 
@@ -41,7 +41,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log"
       ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log")
     if(NOT _OPENSSL_CONFIG_RESULT EQUAL 0)
-      message(FATAL_ERROR "openssl configure: failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log")
+      message(FATAL_ERROR "[openssl] error: configure failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log")
     endif()
 
     message(STATUS "[openssl] Building (${DEPENDENCIES_PARALLEL} jobs)")
@@ -53,7 +53,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-build.log"
       ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-build.log")
     if(NOT _OPENSSL_BUILD_RESULT EQUAL 0)
-      message(FATAL_ERROR "openssl build: failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-build.log")
+      message(FATAL_ERROR "[openssl] error: build failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-build.log")
     endif()
 
     message(STATUS "[openssl] Installing to ${OPENSSL_OUTPUT_DIRECTORY}")
@@ -65,7 +65,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-install.log"
       ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-install.log")
     if(NOT _OPENSSL_INSTALL_RESULT EQUAL 0)
-      message(FATAL_ERROR "openssl install: failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-install.log")
+      message(FATAL_ERROR "[openssl] error: install failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-install.log")
     endif()
 
     # Copy private headers not installed by make install_sw; symlink the openssl/ mirror
@@ -84,7 +84,7 @@ if(VENDOR_SYSTEM)
         "../crypto" "${OPENSSL_OUTPUT_DIRECTORY}/include/openssl/crypto"
       RESULT_VARIABLE _OSSL_SYMLINK_CRYPTO)
     if(NOT _OSSL_SYMLINK_INTERNAL EQUAL 0 OR NOT _OSSL_SYMLINK_CRYPTO EQUAL 0)
-      message(FATAL_ERROR "openssl: failed to symlink private headers under include/openssl/")
+      message(FATAL_ERROR "[openssl] error: failed to symlink private headers under include/openssl/")
     endif()
 
     string(TIMESTAMP _OPENSSL_DONE_TIME "%Y-%b-%d_%H-%M-%S")
@@ -94,45 +94,39 @@ if(VENDOR_SYSTEM)
   # Find the OpenSSL we just built
 
   set(OPENSSL_ROOT_DIR "${OPENSSL_OUTPUT_DIRECTORY}")
+  set(OpenSSL_DIR "${OPENSSL_OUTPUT_DIRECTORY}/lib64/cmake/OpenSSL")
   find_package(OpenSSL ${OPENSSL_VERSION_MIN} REQUIRED QUIET COMPONENTS Crypto SSL PATHS "${OPENSSL_OUTPUT_DIRECTORY}" NO_DEFAULT_PATH)
-else()
-  list(APPEND CMAKE_PREFIX_PATH "/opt/openssl")
-  find_package(OpenSSL ${OPENSSL_VERSION_MIN} QUIET COMPONENTS Crypto SSL)
+elseif(WITH_SSL)
+  find_package(OpenSSL ${OPENSSL_VERSION_MIN} QUIET COMPONENTS Crypto SSL PATHS "${WITH_SSL}" NO_DEFAULT_PATH)
   if(NOT OpenSSL_FOUND)
     message(FATAL_ERROR
-        "openssl >= ${OPENSSL_VERSION_MIN} not found. "
-        "Install libssl-dev (Debian/Ubuntu) or openssl-devel (RHEL/Fedora), "
-        "or set VENDOR_SYSTEM=ON to vendor system dependencies from source."
+        "[openssl] error: >= ${OPENSSL_VERSION_MIN} not found at WITH_SSL=${WITH_SSL}."
     )
   endif()
+else()
+  message(FATAL_ERROR
+      "[openssl] error: set BUILD_SSL=ON to build from source or provide WITH_SSL=/path/to/openssl."
+  )
 endif()
 
-# Check for include/{crypto,internal} to verify that the OpenSSL installation includes the internal headers we need.
-if(NOT EXISTS "${OPENSSL_INCLUDE_DIR}/internal" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/internal"
-  OR NOT EXISTS "${OPENSSL_INCLUDE_DIR}/crypto" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/crypto")
-  set(MISSING_OPENSSL_STATIC TRUE)
-  message(WARNING "openssl internal headers not found - some features may be unavailable. VENDOR_SYSTEM=ON to vendor system dependencies from source.")
-endif()
-
-message(STATUS "Found openssl (${OPENSSL_VERSION}): ${OPENSSL_INCLUDE_DIR}")
+message(STATUS "[openssl] found (${OPENSSL_VERSION}): ${OPENSSL_INCLUDE_DIR}")
 
 add_library(openssl INTERFACE)
 target_link_libraries(openssl INTERFACE OpenSSL::Crypto OpenSSL::SSL)
 
+# Check for Openssl include/{crypto,internal} headers.
+if(NOT EXISTS "${OPENSSL_INCLUDE_DIR}/internal" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/internal"
+  OR NOT EXISTS "${OPENSSL_INCLUDE_DIR}/crypto" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/crypto")
+  message(STATUS "[openssl] warning: internal headers not found, some experimental features may be unavailable.")
+endif()
 
-# Manually put together a static library target 
+# Check for OpenSSL static libraries
 get_filename_component(OPENSSL_LIBRARY_PATH "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
 find_library(OPENSSL_SSL_STATIC NAMES libssl.a HINTS "${OPENSSL_LIBRARY_PATH}" NO_DEFAULT_PATH NO_CACHE)
 find_library(OPENSSL_CRYPTO_STATIC NAMES libcrypto.a HINTS "${OPENSSL_LIBRARY_PATH}" NO_DEFAULT_PATH NO_CACHE)
 
-
 if(NOT OPENSSL_SSL_STATIC OR NOT OPENSSL_CRYPTO_STATIC)
-  message(WARNING
-      "openssl: could not find static libraries. VENDOR_SYSTEM=ON to vendor system dependencies from source."
-      "  library: ${OPENSSL_LIBRARY_PATH}"
-      "  ssl static: ${OPENSSL_SSL_STATIC}"
-      "  crypto static: ${OPENSSL_CRYPTO_STATIC}"
-  )
+  message(WARNING "[openssl] warning: static libraries not found, some experimental features may be unavailable.")
   set(MISSING_OPENSSL_STATIC TRUE)
 else()
   add_library(openssl_static INTERFACE)

@@ -32,7 +32,7 @@ elseif(TARGET nghttp3_static)
   set(_NGHTTP3_TARGET nghttp3_static)
   add_library(nghttp3 ALIAS nghttp3_static)
 else()
-  message(FATAL_ERROR "nghttp3: add_subdirectory did not produce 'nghttp3' or 'nghttp3_static' target")
+  message(FATAL_ERROR "[nghttp3] error: add_subdirectory did not produce 'nghttp3' or 'nghttp3_static' target")
 endif()
 
 target_include_directories(${_NGHTTP3_TARGET} SYSTEM INTERFACE

@@ -1,6 +1,6 @@
 # Dependencies
 
-mod_http3 uses **git submodules** for all vendored dependencies. The `VENDOR_SYSTEM` CMake option controls whether they are built from source or found on the system.
+mod_http3 uses **git submodules** for all dependencies. The `BUILD_SSL` and `BUILD_HTTPD` CMake options control whether they are built from source or found on the system.
 
 ---
 
@@ -22,7 +22,7 @@ git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
-nghttp3 and googletest are *external* dependencies, thus they are always built from their submodules regardless of `VENDOR_SYSTEM`. All others follow the mode below.
+nghttp3 and googletest are *external* dependencies, thus they are always built from their submodules regardless of build options. All others follow the mode below.
 
 ---
 
@@ -44,7 +44,7 @@ mod_http3 uses APR bucket types (`AP_BUCKET_IS_RESPONSE`, etc.) that were introd
 
 ## Dependency resolution modes
 
-### Mode 1 -- Vendored (default, `VENDOR_SYSTEM=ON`)
+### Mode 1 -- Build from source (`BUILD_SSL=ON`, `BUILD_HTTPD=ON`)
 
 CMake builds OpenSSL, APR, APR-util, and httpd from their respective git submodules at **configure time**, installing each into `dependencies/<dep>-dist/`. A small marker file (`dependencies/<dep>-dist/.done`) is used to skip rebuilding dependencies that are already up to date.
 
@@ -55,26 +55,26 @@ CMake builds OpenSSL, APR, APR-util, and httpd from their respective git submodu
 4. httpd (`dependencies/httpd`) -> `dependencies/httpd-dist/`
 
 ```sh
-# default — vendored build (first configure is slow; subsequent ones are instant from cache)
+# default to build from source (first configure is slow; subsequent ones are instant from cache)
 cmake -B build
 cmake --build build -j$(nproc)
 ```
 
 This is the recommended mode for development. Everything is self-contained under the repo.
 
-**To force a clean rebuild of a vendored dependency**, delete its `-dist` dir and re-configure:
+**To force a clean rebuild of a dependency built from source**, delete its `-dist` dir and re-configure:
 
 ```sh
 rm dependencies/openssl-dist/   # re-build OpenSSL
 rm dependencies/httpd-dist/     # re-build httpd
-cmake -B build
+cmake --build build
 ```
 
 ---
 
-### Mode 2 -- System packages (`VENDOR_SYSTEM=OFF`)
+### Mode 2 -- System packages (`BUILD_SSL=OFF`, `BUILD_HTTPD=OFF`)
 
-CMake searches `PATH` for `apxs`/`apxs2`, `apr-1-config`/`apr-config`, `apu-1-config`/`apu-config`, and uses `find_package(OpenSSL)`. All of these must resolve to builds that satisfy the minimum versions.
+CMake uses `WITH_SSL=/path/to/openssl` and `WITH_HTTPD=/path/to/httpd` to locate system-installed dependencies. All must satisfy the minimum versions.
 
 **Minimum requirements checked at configure time:**
 
@@ -85,30 +85,36 @@ CMake searches `PATH` for `apxs`/`apxs2`, `apr-1-config`/`apr-config`, `apu-1-co
 | APR            | ≥ 1.7.0         |
 | APU            | ≥ 1.6.0         |
 
-> **OS package caveat:** System httpd packages (Ubuntu, Fedora, etc.) ship the 2.4.x AP24 generation (MMN < 20211221). CMake will `FATAL_ERROR` on the MMN check. Use vendored mode or a custom PATH install instead.
+> **OS package caveat:** System httpd packages (Ubuntu, Fedora, etc.) ship the 2.4.x AP24 generation (MMN < 20211221). CMake will `FATAL_ERROR` on the MMN check. Use build-from-source mode or a custom PATH install instead.
 
 ---
 
-### Custom PATH (`VENDOR_SYSTEM=OFF` + `PATH` override)
+### Mixed mode (`BUILD_SSL=ON`, `BUILD_HTTPD=OFF` or vice versa)
 
-If you have built httpd and/or OpenSSL from source into a non-standard prefix, export their `bin/` directories before building:
+You can mix building from source and system dependencies. For example, build OpenSSL from source but use a system httpd:
 
 ```sh
-export PATH="$HTTPD_ROOT/bin:$OPENSSL_ROOT/bin:$PATH"
+cmake -B build -DBUILD_SSL=ON -DBUILD_HTTPD=OFF -DWITH_HTTPD=/opt/httpd
+```
+
+Or use system OpenSSL but build httpd from source:
+
+```sh
+cmake -B build -DBUILD_SSL=OFF -DBUILD_HTTPD=ON -DWITH_SSL=/opt/openssl
 ```
 
 ---
 
-### Patching vendored dependencies
+### Patching dependencies built from source
 
-If you need to patch OpenSSL, httpd, or APR/APU, apply the patch to the corresponding submodule and **remove any existing vendored build output** before reconfiguring. Vendored mode will then rebuild from the patched sources.
+If you need to patch OpenSSL, httpd, or APR/APU, apply the patch to the corresponding submodule and **remove any existing build output** before reconfiguring. Build-from-source mode will then rebuild from the patched sources.
 
 ```sh
 cd dependencies/openssl
 git apply /path/to/my.patch
 cd ../..
 
-# ensure the previous vendored build is discarded
+# ensure the previous build output is discarded
 rm -rf dependencies/openssl-dist
 
 cmake -B build # External autotool builds happen at configuration time
@@ -118,14 +124,14 @@ The `.done` approach means you can also manually build and install or copy into 
 
 ---
 
-## Verifying a vendored install
+## Verifying a build-from-source install
 
 ```sh
-# Confirm vendored httpd version and MMN
+# Confirm httpd version and MMN built from source
 dependencies/httpd-dist/bin/apxs -q HTTPD_VERSION
 dependencies/httpd-dist/bin/apxs -q HTTPD_MMN       # expect 20211221
 
-# Confirm vendored OpenSSL is the one httpd links
+# Confirm OpenSSL is the one httpd links
 ldd dependencies/httpd-dist/modules/mod_ssl.so | grep ssl
 # should show dependencies/openssl-dist/lib64/libssl.so, not /usr/lib/...
 ```

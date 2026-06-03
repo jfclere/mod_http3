@@ -3,6 +3,15 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.9 (2026-06-03)
+--------------------
+  *) Replaced VENDOR_SYSTEM with BUILD_SSL/BUILD_HTTPD and added 
+     WITH_SSL/WITH_HTTPD variables for more dependency control.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Updated CMake module logging format across all dependencies.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.8 (2026-06-01)
 --------------------
   *) Updated installation paths to follow conventions for module,

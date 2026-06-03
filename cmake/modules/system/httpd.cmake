@@ -4,6 +4,9 @@ if(TARGET httpd)
   return()
 endif()
 
+include(apr)
+include(apu)
+
 set(HTTPD_DIRECTORY "${DEPENDENCIES_DIRECTORY}/httpd")
 set(HTTPD_OUTPUT_DIRECTORY "${DEPENDENCIES_OUTPUT_DIRECTORY}/httpd-dist")
 
@@ -12,24 +15,30 @@ set(HTTPD_MMN_MIN "20211221")
 
 # -- Find apxs config tool --
 
-if(VENDOR_SYSTEM)
+if(BUILD_HTTPD)
 
   # httpd depends on openssl
   require_initialized_submodule("${DEPENDENCIES_DIRECTORY}/openssl")
-  if(NOT OPENSSL_OUTPUT_DIRECTORY OR NOT EXISTS "${OPENSSL_OUTPUT_DIRECTORY}/.done" OR NOT TARGET openssl)
-    message(FATAL_ERROR "httpd: cannot vendor httpd without vendored openssl -- please build openssl first")
+  if(BUILD_SSL)
+    if(NOT OPENSSL_OUTPUT_DIRECTORY OR NOT EXISTS "${OPENSSL_OUTPUT_DIRECTORY}/.done" OR NOT TARGET openssl)
+      message(FATAL_ERROR "[httpd] error: BUILD_HTTPD=ON with BUILD_SSL=ON requires openssl to be built first")
+    endif()
+  else()
+    if(NOT WITH_SSL)
+      message(FATAL_ERROR "[httpd] error: BUILD_HTTPD=ON with BUILD_SSL=OFF requires WITH_SSL=/path/to/openssl")
+    endif()
   endif()
 
   # httpd depends on apr
   require_initialized_submodule("${DEPENDENCIES_DIRECTORY}/apr")
   if(NOT APR_OUTPUT_DIRECTORY OR NOT EXISTS "${APR_OUTPUT_DIRECTORY}/.done" OR NOT TARGET apr)
-    message(FATAL_ERROR "httpd: cannot vendor httpd without vendored apr -- please build apr first")
+    message(FATAL_ERROR "[httpd] error: cannot build httpd without apr -- please build apr first")
   endif()
 
   # httpd depends on apu (until APR v2 release - apr-2.x bundles apu)
   require_initialized_submodule("${DEPENDENCIES_DIRECTORY}/apr-util")
   if(NOT APU_OUTPUT_DIRECTORY OR NOT EXISTS "${APU_OUTPUT_DIRECTORY}/.done" OR NOT TARGET apu)
-    message(FATAL_ERROR "httpd: cannot vendor httpd without vendored apu -- please build apu first")
+    message(FATAL_ERROR "[httpd] error: cannot build httpd without apu -- please build apu first")
   endif()
 
   # Build httpd from source if not already done
@@ -48,7 +57,7 @@ if(VENDOR_SYSTEM)
         OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log"
         ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log")
       if(NOT _HTTPD_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "httpd distclean: failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log")
+        message(FATAL_ERROR "[httpd] error: distclean failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log")
       endif()
     endif()
 
@@ -61,11 +70,17 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-buildconf.log"
       ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-buildconf.log")
     if(NOT _HTTPD_BUILDCONF_RESULT EQUAL 0)
-      message(FATAL_ERROR "httpd buildconf: failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-buildconf.log")
+      message(FATAL_ERROR "[httpd] error: buildconf failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-buildconf.log")
     endif()
 
     # Resolve OpenSSL lib dir for rpath - valid assumption that we have already built OpenSSL if we're building httpd from source
     get_filename_component(_HTTPD_OPENSSL_LIBDIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+
+    if(BUILD_SSL)
+      set(_HTTPD_SSL_PREFIX "${OPENSSL_OUTPUT_DIRECTORY}")
+    else()
+      set(_HTTPD_SSL_PREFIX "${WITH_SSL}")
+    endif()
 
     execute_process(
       COMMAND ${CMAKE_COMMAND} -E env LDFLAGS=-Wl,-rpath,${_HTTPD_OPENSSL_LIBDIR}
@@ -77,13 +92,13 @@ if(VENDOR_SYSTEM)
           --with-mpm=event
           --enable-mods-shared=all
           --enable-ssl
-          --with-ssl=${DEPENDENCIES_OUTPUT_DIRECTORY}/openssl
+          --with-ssl=${_HTTPD_SSL_PREFIX}
       WORKING_DIRECTORY "${HTTPD_DIRECTORY}"
       RESULT_VARIABLE _HTTPD_CONFIGURE_RESULT
       OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log"
       ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log")
     if(NOT _HTTPD_CONFIGURE_RESULT EQUAL 0)
-      message(FATAL_ERROR "httpd configure: failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log")
+      message(FATAL_ERROR "[httpd] error: configure failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log")
     endif()
 
     message(STATUS "[httpd] Building (${DEPENDENCIES_PARALLEL} jobs)")
@@ -95,7 +110,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-build.log"
       ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-build.log")
     if(NOT _HTTPD_BUILD_RESULT EQUAL 0)
-      message(FATAL_ERROR "httpd build: failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-build.log")
+      message(FATAL_ERROR "[httpd] error: build failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-build.log")
     endif()
 
     message(STATUS "[httpd] Installing to ${HTTPD_OUTPUT_DIRECTORY}")
@@ -107,7 +122,7 @@ if(VENDOR_SYSTEM)
       OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-install.log"
       ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-install.log")
     if(NOT _HTTPD_INSTALL_RESULT EQUAL 0)
-      message(FATAL_ERROR "httpd install: failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-install.log")
+      message(FATAL_ERROR "[httpd] error: install failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-install.log")
     endif()
 
     string(TIMESTAMP _HTTPD_DONE_TIME "%Y-%b-%d_%H-%M-%S")
@@ -121,16 +136,17 @@ if(VENDOR_SYSTEM)
     NAMES apxs apxs2
     HINTS "${HTTPD_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
-else()
-  list(APPEND CMAKE_PREFIX_PATH "/opt/httpd")
-  find_program(APXS_EXECUTABLE NAMES apxs apxs2 NO_CACHE)
+elseif(WITH_HTTPD)
+  find_program(APXS_EXECUTABLE NAMES apxs apxs2 HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APXS_EXECUTABLE)
-      message(FATAL_ERROR
-          "apxs not found. "
-          "Install apache2-dev (Debian/Ubuntu) or httpd-devel (RHEL/Fedora), "
-          "or set VENDOR_SYSTEM=ON to vendor system dependencies from source."
-      )
+    message(FATAL_ERROR
+        "[httpd] error: apxs not found at WITH_HTTPD=${WITH_HTTPD}."
+    )
   endif()
+else()
+  message(FATAL_ERROR
+      "[httpd] error: set BUILD_HTTPD=ON to build from source or provide WITH_HTTPD=/path/to/httpd."
+  )
 endif()
 
 # -- Extract httpd information --
@@ -144,7 +160,7 @@ execute_process(
 )
 if(NOT HTTPD_VERSION_RESULT EQUAL 0 OR NOT HTTPD_VERSION OR HTTPD_VERSION VERSION_LESS HTTPD_VERSION_MIN)
   message(FATAL_ERROR
-    "httpd: apxs did not report a valid HTTPD_VERSION (need at least ${HTTPD_VERSION_MIN})\n"
+    "[httpd] error: apxs did not report a valid HTTPD_VERSION (need at least ${HTTPD_VERSION_MIN})\n"
     "  apxs          = ${APXS_EXECUTABLE}\n"
     "  HTTPD_VERSION = ${HTTPD_VERSION}\n"
     "  result        = ${HTTPD_VERSION_RESULT}")
@@ -159,7 +175,7 @@ execute_process(
 )
 if(NOT HTTPD_INCLUDE_RESULT EQUAL 0 OR NOT EXISTS "${HTTPD_INCLUDE_DIR}/httpd.h")
   message(FATAL_ERROR
-    "httpd: could not locate headers via apxs\n"
+    "[httpd] error: could not locate headers via apxs\n"
     "  apxs       = ${APXS_EXECUTABLE}\n"
     "  INCLUDEDIR = ${HTTPD_INCLUDE_DIR}\n"
     "  result     = ${HTTPD_INCLUDE_RESULT}")
@@ -172,15 +188,23 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
   RESULT_VARIABLE HTTPD_MMN_RESULT
 )
-if(NOT HTTPD_MMN_RESULT EQUAL 0 OR NOT HTTPD_MMN OR HTTPD_MMN LESS HTTPD_MMN_MIN)
+if(NOT HTTPD_MMN_RESULT EQUAL 0 OR NOT HTTPD_MMN)
   message(FATAL_ERROR
-    "httpd: apxs did not report a valid HTTPD_MMN (need at least ${HTTPD_MMN_MIN})\n"
+    "[httpd] error: apxs did not report a valid HTTPD_MMN (need at least ${HTTPD_MMN_MIN})\n"
     "  apxs       = ${APXS_EXECUTABLE}\n"
     "  HTTPD_MMN  = ${HTTPD_MMN}\n"
     "  result     = ${HTTPD_MMN_RESULT}")
 endif()
 
-message(STATUS "Found HTTPD (${HTTPD_VERSION}): ${HTTPD_INCLUDE_DIR}")
+if(HTTPD_MMN LESS HTTPD_MMN_MIN)
+  message(WARNING
+    "[httpd] warning: apxs reported HTTPD_MMN=${HTTPD_MMN} which is less than required minimum ${HTTPD_MMN_MIN}\n"
+    "  Some features may be unavailable.")
+endif()
+
+
+message(STATUS "[httpd] found (${HTTPD_VERSION}): ${HTTPD_INCLUDE_DIR}")
 
 add_library(httpd INTERFACE)
+target_link_libraries(httpd INTERFACE apr apu)
 target_include_directories(httpd SYSTEM INTERFACE "${HTTPD_INCLUDE_DIR}")
