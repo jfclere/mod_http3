@@ -4,140 +4,99 @@ An Apache httpd module that adds HTTP/3 support over QUIC.
 
 Status: **experimental**.
 
-
-## Table of Contents
-
-- [Dependencies](#dependencies)
-- [Quick Start](#quick-start)
-- [CMake Options](#cmake-options)
-- [Project Layout](#project-layout)
-- [Testing with Chrome](#testing-with-chrome)
-- [httpd.conf Example](#httpdconf-example)
-- [License](#license)
-
-
-
-## Dependencies
-
-By default all core dependencies (OpenSSL, httpd, APR/APR-util, nghttp3, googletest) are built from git submodules (`VENDOR_SYSTEM=ON`). 
-
-see [CONFIGURATION.md](CONFIGURATION.md) for using system-installed packages.
-
-
-
-## Quick Start
+## Build
 
 ```sh
-git clone https://github.com/machine-moon/mod_http3.git
-cd mod_http3
-git submodule sync --recursive
-git submodule update --init --recursive
-cmake -B build
-cmake --build build
-cmake --build build --target tests
+cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd
+cmake --build build -j$(nproc)
 ```
 
-The first build compiles OpenSSL, APR, APR-util, and httpd from submodules (approximately 10 minutes by default). Subsequent builds reuse the cached result.
+Output: `build/lib/mod_http3.so`
 
-To speed up the vendored dependency builds, override the parallel job count:
+If you don't have OpenSSL >= 3.5.0 or httpd with MMN >= 20211221:
 
 ```sh
-cmake -B build -DDEPENDENCIES_PARALLEL=12
+git submodule update --init dependencies/openssl dependencies/httpd dependencies/apr dependencies/apr-util
+cmake -B build -DBUILD_SSL=ON -DBUILD_HTTPD=ON
+cmake --build build -j$(nproc)
 ```
 
-Output:
-
-- `build/lib/mod_http3.so` -- Apache module
-- `build/bin/mod_http3_tests` -- test binary
-
+See [INSTALL](INSTALL) for full build instructions.
 
 ## CMake Options
 
-Variables are passed with `-D` at configure time:
+| Option | Default | Description |
+|---|---|---|
+| `CMAKE_BUILD_TYPE` | `Release` | `Debug`, `Release` |
+| `BUILD_MODULE` | `ON` | Build `mod_http3.so` |
+| `BUILD_EXAMPLES` | `ON` | Build example programs |
+| `BUILD_TESTS` | `ON` | Build test suite |
+| `BUILD_SSL` | `OFF` | Build OpenSSL from source |
+| `BUILD_HTTPD` | `OFF` | Build httpd from source |
+| `WITH_SSL` | (empty) | Path to OpenSSL prefix |
+| `WITH_HTTPD` | (empty) | Path to httpd prefix |
+| `ENABLE_ASAN` | `OFF` | Address Sanitizer (requires `Debug`) |
+| `ENABLE_UBSAN` | `OFF` | UB Sanitizer (requires `Debug`) |
+| `ENABLE_WERROR` | `OFF` | Treat warnings as errors |
+
+See [CONFIGURATION.md](CONFIGURATION.md) for advanced options and dependency internals.
+
+## Deploy
 
 ```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+cmake --install build --prefix /opt/mod_http3
 ```
 
-CMake boolean options accept `ON`/`OFF`, `YES`/`NO`, `TRUE`/`FALSE`, or `1`/`0`.
-
-See the [CMake documentation](https://cmake.org/cmake/help/latest/command/if.html#constant) for the full list of accepted values.
-
-| Option                    | Default   | Description                                              |
-|---------------------------|-----------|----------------------------------------------------------|
-| `CMAKE_BUILD_TYPE`        | `Release` | `Debug` / `Release` /                                    |
-| `BUILD_MODULE`            | `ON`      | Build `mod_http3.so`                                     |
-| `BUILD_EXAMPLES`          | `ON`      | Build example programs                                   |
-| `BUILD_TESTS`             | `ON`      | Build Google Test suite                                  |
-| `ENABLE_ASAN`             | `OFF`     | Address Sanitizer (requires `Debug`)                     |
-| `ENABLE_UBSAN`            | `OFF`     | UB Sanitizer (requires `Debug`)                          |
-| `ENABLE_WERROR`           | `OFF`     | Treat warnings as errors                                 |
-| `VENDOR_SYSTEM`           | `ON`      | Build deps from submodules; `OFF` to use system packages |
-| `DEPENDENCIES_PARALLEL`   | `6`       | Parallel jobs for vendored autotools builds              |
-
-See [CONFIGURATION.md](CONFIGURATION.md) for full details, path options,
-and examples.
-
-
-
-## Project Layout
+Installed files:
 
 ```
-mod_http3/
-  include/              Module headers (ossl-nghttp3.h, version.h)
-  src/                  Module source (mod_h3.c, ossl-nghttp3.c)
-  examples/             Standalone example programs
-  tests/                Google Test suite
-cmake/
-  modules/system/       Finders for OpenSSL, httpd, APR, APU
-  modules/external/     Finders for nghttp3, googletest
-  utils/                Compiler flags, helpers
-dependencies/           Git submodules + vendored build outputs (*-dist/)
-scripts/                Helper scripts
+lib64/httpd/modules/mod_http3.so
+etc/httpd/conf.modules.d/10-h3.conf
+share/doc/mod_http3/    (CHANGES, NOTICE, AUTHORS)
+share/licenses/mod_http3/LICENSE
 ```
 
-
-
-## Testing with Chrome
-
-```sh
-google-chrome \
-    --user-data-dir=/tmp/quic_dev \
-    --ignore-certificate-errors \
-    --origin-to-force-quic-on=localhost:4433 \
-    https://localhost:4433
-```
-
-
-
-## httpd.conf Example
+Minimal VirtualHost configuration:
 
 ```apache
-LoadModule http3_module modules/mod_http3.so
+LoadModule ssl_module     modules/mod_ssl.so
+LoadModule headers_module modules/mod_headers.so
+LoadModule http3_module   modules/mod_http3.so
 
-Listen 4433 https
 EnableMMAP Off
+Listen 4433 https
 
 <VirtualHost *:4433>
-    ServerName localhost:4433
+    ServerName localhost
 
-    Protocols http/1.1
-    ProtocolsHonorOrder on
     SSLEngine on
-    SSLCertificateFile    "/path/to/localhost.crt"
-    SSLCertificateKeyFile "/path/to/localhost.key"
+    SSLCertificateFile    conf/server.crt
+    SSLCertificateKeyFile conf/server.key
 
-    H3CertificatePath    "/path/to/localhost.crt"
-    H3CertificateKeyPath "/path/to/localhost.key"
+    H3CertificatePath    conf/server.crt
+    H3CertificateKeyPath conf/server.key
 
-    Header set alt-svc "h3=\":4433\"; ma=60; persist=1"
+    Header always set Alt-Svc "h3=\":4433\"; ma=60; persist=1"
+
+    DocumentRoot htdocs
+    <Directory htdocs>
+        Require all granted
+    </Directory>
 </VirtualHost>
 ```
 
-See [CONFIGURATION_HTTPD.md](CONFIGURATION_HTTPD.md) for directive
-reference and VirtualHost configuration details.
+See [INSTALL](INSTALL) for complete deployment steps.
 
+## Documentation
 
+| File | Contents |
+|---|---|
+| [INSTALL](INSTALL) | Build, deploy, verify |
+| [CONFIGURATION.md](CONFIGURATION.md) | Advanced build options, dependency management |
+| [CONFIGURATION_HTTPD.md](CONFIGURATION_HTTPD.md) | httpd directives, VirtualHost, troubleshooting |
+| [docs/testing-with-curl.md](docs/testing-with-curl.md) | HTTP/3 testing with curl |
+| [docs/testing-examples.md](docs/testing-examples.md) | Example programs |
+| [container/README.md](container/README.md) | Container-based testing |
 
 ## License
 

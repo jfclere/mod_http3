@@ -3,6 +3,16 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.10 (2026-06-04)
+--------------------
+  *) Fixed missing request line by reconstructing it from method, uri,
+     and protocol if unset before ap_process_request() is called.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Updated INSTALL and README documentation to cover deployment
+     steps, build requirements, and curl3 integration notes.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>] 
+
 v0.0.9 (2026-06-03)
 --------------------
   *) Replaced VENDOR_SYSTEM with BUILD_SSL/BUILD_HTTPD and added 
