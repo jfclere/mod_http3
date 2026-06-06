@@ -1,0 +1,23 @@
+services:
+  httpd:
+    build:
+      context: ..
+      dockerfile: container/Containerfile
+    image: apache-http3-dev:latest
+    container_name: mod_http3_dev
+    ports:
+      - "8443:8443/tcp"   # HTTP/1.1 and HTTP/2
+      - "8443:8443/udp"   # HTTP/3
+    volumes:
+      - ./httpd.conf:/src/dependencies/httpd-dist/conf/httpd.conf:ro
+      - ./certs:/src/dependencies/httpd-dist/conf/certs:ro
+      - ./static:/src/dependencies/httpd-dist/htdocs:ro
+    healthcheck:
+      test: ["CMD", "curl", "--http3", "-ksSf", "https://localhost:8443/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: on-failure:3
+    security_opt:
+      - label:disable

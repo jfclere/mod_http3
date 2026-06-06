@@ -3,6 +3,11 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.11 (2026-06-06)
+--------------------
+  *) Added container support for running mod_http3 in a containerized environment.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.10 (2026-06-04)
 --------------------
   *) Fixed missing request line by reconstructing it from method, uri,
