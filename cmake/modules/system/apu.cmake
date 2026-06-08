@@ -90,6 +90,20 @@ if(BUILD_HTTPD)
     NAMES apu-1-config apu-config
     HINTS "${APU_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
+elseif(WITH_APU)
+  find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config HINTS "${WITH_APU}/bin" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT APU_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apu] error: apu-config not found at WITH_APU=${WITH_APU}."
+    )
+  endif()
+elseif(WITH_APR)
+  find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config HINTS "${WITH_APR}/bin" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT APU_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apu] error: apu-config not found at WITH_APR=${WITH_APR}."
+    )
+  endif()
 elseif(WITH_HTTPD)
   find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APU_CONFIG_EXECUTABLE)
@@ -99,7 +113,7 @@ elseif(WITH_HTTPD)
   endif()
 else()
   message(FATAL_ERROR
-      "[apu] error: set BUILD_HTTPD=ON to build from source or provide WITH_HTTPD=/path/to/httpd."
+      "[apu] error: set BUILD_HTTPD=ON to build from source or provide WITH_APU=/path/to/apr-util, WITH_APR=/path/to/apr, or WITH_HTTPD=/path/to/httpd."
   )
 endif()
 

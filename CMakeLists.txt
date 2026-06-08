@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.11)
+project(mod_http3 VERSION 0.0.12)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -52,6 +52,8 @@ option(BUILD_HTTPD "Build httpd (includes APR/APU) from source" OFF)
 
 set(WITH_SSL "" CACHE PATH "Path to OpenSSL installation prefix")
 set(WITH_HTTPD "" CACHE PATH "Path to httpd installation prefix (includes APR/APU)")
+set(WITH_APR "" CACHE PATH "Path to APR installation prefix")
+set(WITH_APU "" CACHE PATH "Path to APR-util installation prefix")
 
 # -- Generate version.h --
 include(version.h)
@@ -133,6 +135,12 @@ if(BUILD_HTTPD)
     message(STATUS "  BUILD_HTTPD    : ${BUILD_HTTPD}")
 else()
     message(STATUS "  WITH_HTTPD     : ${WITH_HTTPD}")
+    if(WITH_APR)
+        message(STATUS "  WITH_APR       : ${WITH_APR}")
+    endif()
+    if(WITH_APU)
+        message(STATUS "  WITH_APU       : ${WITH_APU}")
+    endif()
 endif()
 message(STATUS "")
 

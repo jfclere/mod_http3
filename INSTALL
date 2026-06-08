@@ -6,11 +6,23 @@
 
   Provide your OpenSSL and httpd paths:
 
-     $ git submodule update --init \
-         dependencies/googletest dependencies/nghttp3
+     $ git submodule update --init dependencies/nghttp3
      $ cmake -B build \
          -DWITH_SSL=/opt/openssl \
-         -DWITH_HTTPD=/opt/httpd
+         -DWITH_HTTPD=/opt/httpd \
+         -DBUILD_EXAMPLES=OFF \
+         -DBUILD_TESTS=OFF
+     $ cmake --build build -j$(nproc)
+
+  If APR and APR-util are installed separately from httpd:
+
+     $ cmake -B build \
+         -DWITH_SSL=/opt/openssl \
+         -DWITH_HTTPD=/opt/httpd \
+         -DWITH_APR=/opt/apr \
+         -DWITH_APU=/opt/apr-util \
+         -DBUILD_EXAMPLES=OFF \
+         -DBUILD_TESTS=OFF
      $ cmake --build build -j$(nproc)
 
   If you need to build dependencies from source:
@@ -19,6 +31,15 @@
          dependencies/openssl dependencies/httpd \
          dependencies/apr dependencies/apr-util
      $ cmake -B build -DBUILD_SSL=ON -DBUILD_HTTPD=ON
+     $ cmake --build build -j$(nproc)
+
+  To enable tests, you'll need googletest:
+
+     $ git submodule update --init \
+         dependencies/nghttp3 dependencies/googletest
+     $ cmake -B build \
+         -DWITH_SSL=/opt/openssl \
+         -DWITH_HTTPD=/opt/httpd
      $ cmake --build build -j$(nproc)
 
   Output: build/lib/mod_http3.so

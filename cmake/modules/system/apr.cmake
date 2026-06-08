@@ -90,6 +90,13 @@ if(BUILD_HTTPD)
     NAMES apr-1-config apr-config
     HINTS "${APR_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
+elseif(WITH_APR)
+  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_APR}/bin" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT APR_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apr] error: apr-config not found at WITH_APR=${WITH_APR}."
+    )
+  endif()
 elseif(WITH_HTTPD)
   find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APR_CONFIG_EXECUTABLE)
@@ -99,7 +106,7 @@ elseif(WITH_HTTPD)
   endif()
 else()
   message(FATAL_ERROR
-      "[apr] error: set BUILD_HTTPD=ON to build from source or provide WITH_HTTPD=/path/to/httpd."
+      "[apr] error: set BUILD_HTTPD=ON to build from source or provide WITH_APR=/path/to/apr or WITH_HTTPD=/path/to/httpd."
   )
 endif()
 

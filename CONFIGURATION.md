@@ -87,6 +87,13 @@ cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd
 cmake --build build -j$(nproc)
 ```
 
+If APR and APR-util are installed separately from httpd:
+
+```sh
+cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd -DWITH_APR=/opt/apr -DWITH_APU=/opt/apr-util
+cmake --build build -j$(nproc)
+```
+
 ## Mixed Mode
 
 Build OpenSSL from source, use system httpd:

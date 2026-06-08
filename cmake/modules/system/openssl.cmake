@@ -114,22 +114,25 @@ message(STATUS "[openssl] found (${OPENSSL_VERSION}): ${OPENSSL_INCLUDE_DIR}")
 add_library(openssl INTERFACE)
 target_link_libraries(openssl INTERFACE OpenSSL::Crypto OpenSSL::SSL)
 
-# Check for Openssl include/{crypto,internal} headers.
-if(NOT EXISTS "${OPENSSL_INCLUDE_DIR}/internal" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/internal"
-  OR NOT EXISTS "${OPENSSL_INCLUDE_DIR}/crypto" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/crypto")
-  message(STATUS "[openssl] warning: internal headers not found, some experimental features may be unavailable.")
-endif()
+# Extras
 
 # Check for OpenSSL static libraries
 get_filename_component(OPENSSL_LIBRARY_PATH "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
 find_library(OPENSSL_SSL_STATIC NAMES libssl.a HINTS "${OPENSSL_LIBRARY_PATH}" NO_DEFAULT_PATH NO_CACHE)
 find_library(OPENSSL_CRYPTO_STATIC NAMES libcrypto.a HINTS "${OPENSSL_LIBRARY_PATH}" NO_DEFAULT_PATH NO_CACHE)
 
-if(NOT OPENSSL_SSL_STATIC OR NOT OPENSSL_CRYPTO_STATIC)
-  message(WARNING "[openssl] warning: static libraries not found, some experimental features may be unavailable.")
-  set(MISSING_OPENSSL_STATIC TRUE)
-else()
+if(OPENSSL_SSL_STATIC AND OPENSSL_CRYPTO_STATIC)
   add_library(openssl_static INTERFACE)
   target_include_directories(openssl_static SYSTEM INTERFACE "${OPENSSL_INCLUDE_DIR}")
   target_link_libraries(openssl_static INTERFACE "${OPENSSL_SSL_STATIC}" "${OPENSSL_CRYPTO_STATIC}" ${CMAKE_DL_LIBS})
+endif()
+
+# Check for Openssl include/internal headers.
+if(NOT EXISTS "${OPENSSL_INCLUDE_DIR}/internal" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/internal")
+  set(MISSING_OPENSSL_INTERNAL TRUE)
+endif()
+
+# Check for Openssl include/crypto headers.
+if(NOT EXISTS "${OPENSSL_INCLUDE_DIR}/crypto" OR NOT IS_DIRECTORY "${OPENSSL_INCLUDE_DIR}/crypto")
+  set(MISSING_OPENSSL_CRYPTO TRUE)
 endif()
