@@ -6,8 +6,6 @@ endif()
 
 set(APU_VERSION_MIN "1.6.0")
 
-# -- Find APU config tool --
-
 if(WITH_APU)
   find_program(APU_CONFIG_EXECUTABLE NAMES apu-1-config apu-config HINTS "${WITH_APU}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APU_CONFIG_EXECUTABLE)
@@ -186,7 +184,7 @@ if(NOT APU_LINK_FLAGS_RESULT EQUAL 0 OR NOT APU_LINK_FLAGS)
     "  result     = ${APU_LINK_FLAGS_RESULT}")
 endif()
 
-message(STATUS "[apu] found (${APU_VERSION}): ${APU_INCLUDE_DIR}")
+message(STATUS "[apu] found (${APU_VERSION}): ${APU_OUTPUT_DIRECTORY}")
 
 separate_arguments(APU_LINK_FLAGS_LIST UNIX_COMMAND "${APU_LINK_FLAGS}")
 string(REGEX MATCH "-L([^ \t]+)" APU_L_MATCH "${APU_LINK_FLAGS}")

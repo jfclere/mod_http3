@@ -7,7 +7,10 @@ endif()
 set(OPENSSL_VERSION_MIN "3.5.0")
 
 if(WITH_SSL)
-  find_package(OpenSSL QUIET COMPONENTS Crypto SSL PATHS "${WITH_SSL}" NO_DEFAULT_PATH)
+  find_package(OpenSSL QUIET COMPONENTS Crypto SSL PATHS
+    "${WITH_SSL}/lib/cmake/OpenSSL"
+    "${WITH_SSL}/lib64/cmake/OpenSSL"
+    NO_DEFAULT_PATH)
   if(NOT OpenSSL_FOUND)
     message(FATAL_ERROR
         "[openssl] error: OpenSSL not found at WITH_SSL=${WITH_SSL}."
@@ -101,19 +104,20 @@ else()
 
   # Find the OpenSSL we just built
 
-  set(OPENSSL_ROOT_DIR "${OPENSSL_OUTPUT_DIRECTORY}")
-  set(OpenSSL_DIR "${OPENSSL_OUTPUT_DIRECTORY}/lib64/cmake/OpenSSL")
-  find_package(OpenSSL REQUIRED QUIET COMPONENTS Crypto SSL PATHS "${OPENSSL_OUTPUT_DIRECTORY}" NO_DEFAULT_PATH)
+  find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL PATHS
+    "${OPENSSL_OUTPUT_DIRECTORY}/lib/cmake/OpenSSL"
+    "${OPENSSL_OUTPUT_DIRECTORY}/lib64/cmake/OpenSSL"
+    NO_DEFAULT_PATH)
 endif()
 
-# Verify version is >= 3.5.0
+# Verify version is >= OPENSSL_VERSION_MIN
 if(OPENSSL_VERSION VERSION_LESS OPENSSL_VERSION_MIN)
   message(FATAL_ERROR
       "[openssl] error: found version ${OPENSSL_VERSION} but require >= ${OPENSSL_VERSION_MIN}."
   )
 endif()
 
-message(STATUS "[openssl] found (${OPENSSL_VERSION}): ${OPENSSL_INCLUDE_DIR}")
+message(STATUS "[openssl] found (${OPENSSL_VERSION}): ${OPENSSL_OUTPUT_DIRECTORY}")
 
 add_library(openssl INTERFACE)
 target_link_libraries(openssl INTERFACE OpenSSL::Crypto OpenSSL::SSL)

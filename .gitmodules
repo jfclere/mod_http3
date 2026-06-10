@@ -2,7 +2,7 @@
 	path = dependencies/nghttp3
 	url = https://github.com/ngtcp2/nghttp3.git
 	shallow = true
-	ignore = none
+	ignore = untracked
 	update = checkout
 	branch = main
 [submodule "dependencies/googletest"]

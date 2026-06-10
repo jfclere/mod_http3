@@ -10,8 +10,6 @@ include(apu)
 set(HTTPD_VERSION_MIN "2.4.x")
 set(HTTPD_MMN_MIN "20211221")
 
-# -- Find apxs config tool --
-
 if(WITH_HTTPD)
   find_program(APXS_EXECUTABLE NAMES apxs apxs2 HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APXS_EXECUTABLE)
@@ -199,7 +197,7 @@ if(HTTPD_MMN LESS HTTPD_MMN_MIN)
 endif()
 
 
-message(STATUS "[httpd] found (${HTTPD_VERSION}): ${HTTPD_INCLUDE_DIR}")
+message(STATUS "[httpd] found (${HTTPD_VERSION}): ${HTTPD_OUTPUT_DIRECTORY}")
 
 add_library(httpd INTERFACE)
 target_link_libraries(httpd INTERFACE apr apu)

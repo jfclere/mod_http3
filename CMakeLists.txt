@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.13)
+project(mod_http3 VERSION 0.0.14)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -106,11 +106,9 @@ install(FILES "LICENSE" DESTINATION share/licenses/mod_http3)
 
 # -- Summary --
 message(STATUS "")
-message(STATUS "\t VERSION ${PROJECT_VERSION}")
-message(STATUS "")
-message(STATUS "")
 message(STATUS "Configuration Summary:")
 message(STATUS "")
+message(STATUS "  Version        : ${PROJECT_VERSION}")
 message(STATUS "  Platform       : ${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "  Compiler       : ${CMAKE_C_COMPILER_ID} (${CMAKE_C_COMPILER_VERSION})")
 message(STATUS "  Build Type     : ${CMAKE_BUILD_TYPE}")
@@ -122,12 +120,6 @@ message(STATUS "")
 message(STATUS "  ENABLE_UBSAN   : ${ENABLE_UBSAN}")
 message(STATUS "  ENABLE_ASAN    : ${ENABLE_ASAN}")
 message(STATUS "  ENABLE_WERROR  : ${ENABLE_WERROR}")
-message(STATUS "")
-message(STATUS "  nghttp3  : ${NGHTTP3_OUTPUT_DIRECTORY}")
-message(STATUS "  OpenSSL  : ${OPENSSL_OUTPUT_DIRECTORY}")
-message(STATUS "  HTTPD    : ${HTTPD_OUTPUT_DIRECTORY}")
-message(STATUS "  APR      : ${APR_OUTPUT_DIRECTORY}")
-message(STATUS "  APU      : ${APU_OUTPUT_DIRECTORY}")
 message(STATUS "")
 
 # -- CPACK --

@@ -6,8 +6,6 @@ endif()
 
 set(APR_VERSION_MIN "1.7.0")
 
-# -- Find APR config tool --
-
 if(WITH_APR)
   find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_APR}/bin" NO_DEFAULT_PATH NO_CACHE)
   if(NOT APR_CONFIG_EXECUTABLE)
@@ -178,7 +176,7 @@ if(NOT APR_LINK_FLAGS_RESULT EQUAL 0 OR NOT APR_LINK_FLAGS)
     "  result     = ${APR_LINK_FLAGS_RESULT}")
 endif()
 
-message(STATUS "[apr] found (${APR_VERSION}): ${APR_INCLUDE_DIR}")
+message(STATUS "[apr] found (${APR_VERSION}): ${APR_OUTPUT_DIRECTORY}")
 
 separate_arguments(APR_LINK_FLAGS_LIST UNIX_COMMAND "${APR_LINK_FLAGS}")
 string(REGEX MATCH "-L([^ \t]+)" APR_L_MATCH "${APR_LINK_FLAGS}")
