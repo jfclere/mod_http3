@@ -4,14 +4,53 @@ if(TARGET apr)
   return()
 endif()
 
-set(APR_DIRECTORY "${DEPENDENCIES_DIRECTORY}/apr")
-set(APR_OUTPUT_DIRECTORY "${DEPENDENCIES_OUTPUT_DIRECTORY}/apr-dist")
-
 set(APR_VERSION_MIN "1.7.0")
 
 # -- Find APR config tool --
 
-if(BUILD_HTTPD)
+if(WITH_APR)
+  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_APR}/bin" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT APR_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apr] error: apr-config not found at WITH_APR=${WITH_APR}."
+    )
+  endif()
+  set(APR_OUTPUT_DIRECTORY "${WITH_APR}")
+elseif(WITH_HTTPD)
+  # Query apxs to find APR location
+  find_program(_APXS_EXECUTABLE NAMES apxs apxs2 HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT _APXS_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apr] error: apxs not found at WITH_HTTPD=${WITH_HTTPD}."
+    )
+  endif()
+
+  execute_process(
+    COMMAND "${_APXS_EXECUTABLE}" -q APR_BINDIR
+    OUTPUT_VARIABLE _APR_BINDIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _APR_BINDIR_RESULT
+  )
+
+  if(NOT _APR_BINDIR_RESULT EQUAL 0 OR NOT _APR_BINDIR)
+    message(FATAL_ERROR
+        "[apr] error: apxs could not query APR_BINDIR\n"
+        "  apxs = ${_APXS_EXECUTABLE}\n"
+        "  result = ${_APR_BINDIR_RESULT}"
+    )
+  endif()
+
+  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${_APR_BINDIR}" NO_DEFAULT_PATH NO_CACHE)
+  if(NOT APR_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR
+        "[apr] error: apr-config not found at APR_BINDIR=${_APR_BINDIR} (queried from apxs)."
+    )
+  endif()
+  set(APR_OUTPUT_DIRECTORY "${_APR_BINDIR}")
+else()
+
+  set(APR_DIRECTORY "${DEPENDENCIES_DIRECTORY}/apr")
+  set(APR_OUTPUT_DIRECTORY "${DEPENDENCIES_OUTPUT_DIRECTORY}/apr-dist")
 
   # Build apr from source if not already done
   if(NOT EXISTS "${APR_OUTPUT_DIRECTORY}/.done")
@@ -90,24 +129,6 @@ if(BUILD_HTTPD)
     NAMES apr-1-config apr-config
     HINTS "${APR_OUTPUT_DIRECTORY}/bin"
     NO_DEFAULT_PATH REQUIRED NO_CACHE)
-elseif(WITH_APR)
-  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_APR}/bin" NO_DEFAULT_PATH NO_CACHE)
-  if(NOT APR_CONFIG_EXECUTABLE)
-    message(FATAL_ERROR
-        "[apr] error: apr-config not found at WITH_APR=${WITH_APR}."
-    )
-  endif()
-elseif(WITH_HTTPD)
-  find_program(APR_CONFIG_EXECUTABLE NAMES apr-1-config apr-config HINTS "${WITH_HTTPD}/bin" NO_DEFAULT_PATH NO_CACHE)
-  if(NOT APR_CONFIG_EXECUTABLE)
-    message(FATAL_ERROR
-        "[apr] error: apr-config not found at WITH_HTTPD=${WITH_HTTPD}."
-    )
-  endif()
-else()
-  message(FATAL_ERROR
-      "[apr] error: set BUILD_HTTPD=ON to build from source or provide WITH_APR=/path/to/apr or WITH_HTTPD=/path/to/httpd."
-  )
 endif()
 
 # -- Extract APR information --
