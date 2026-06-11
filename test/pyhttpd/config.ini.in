@@ -1,0 +1,27 @@
+[global]
+curl_bin = /opt/curl/bin/curl
+
+[httpd]
+httpd = @HTTPD_OUTPUT_DIRECTORY@/bin/httpd
+apxs = @HTTPD_OUTPUT_DIRECTORY@/bin/apxs
+libexec_dir = @HTTPD_OUTPUT_DIRECTORY@/modules
+
+[openssl]
+prefix = @OPENSSL_OUTPUT_DIRECTORY@
+
+[apr]
+prefix = @APR_OUTPUT_DIRECTORY@
+
+[apu]
+prefix = @APU_OUTPUT_DIRECTORY@
+
+[test]
+src_dir = @CMAKE_SOURCE_DIR@
+gen_dir = @CMAKE_BINARY_DIR@/test/gen
+build_dir = @CMAKE_BINARY_DIR@
+mod_http3 = @CMAKE_BINARY_DIR@/lib/mod_http3.so
+https_port = 6643
+http_port = 6644
+http_tld = tests.httpd.apache.org
+test_dir = @CMAKE_SOURCE_DIR@/test
+cert_dir = @CMAKE_SOURCE_DIR@/test/certs

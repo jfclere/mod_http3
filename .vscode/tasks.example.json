@@ -7,41 +7,9 @@
             "description": "Build type",
             "options": [
                 "Debug",
-                "Release",
-                "RelWithDebInfo",
-                "MinSizeRel"
+                "Release"
             ],
             "default": "Debug"
-        },
-        {
-            "id": "buildModule",
-            "type": "pickString",
-            "description": "Build Apache DSO module (BUILD_MODULE)",
-            "options": [
-                "ON",
-                "OFF"
-            ],
-            "default": "ON"
-        },
-        {
-            "id": "buildExamples",
-            "type": "pickString",
-            "description": "Build example programs (BUILD_EXAMPLES)",
-            "options": [
-                "ON",
-                "OFF"
-            ],
-            "default": "ON"
-        },
-        {
-            "id": "buildTests",
-            "type": "pickString",
-            "description": "Build test suite (BUILD_TESTS)",
-            "options": [
-                "ON",
-                "OFF"
-            ],
-            "default": "ON"
         },
         {
             "id": "enableUBSAN",
@@ -62,38 +30,19 @@
                 "OFF"
             ],
             "default": "OFF"
-        },
-        {
-            "id": "enableWerror",
-            "type": "pickString",
-            "description": "Treat warnings as errors (ENABLE_WERROR)",
-            "options": [
-                "ON",
-                "OFF"
-            ],
-            "default": "OFF"
-        },
-        {
-            "id": "vendorSysPkgs",
-            "type": "pickString",
-            "description": "Vendor system dependencies (VENDOR_SYSTEM)",
-            "options": [
-                "ON",
-                "OFF"
-            ],
-            "default": "ON"
         }
     ],
     "tasks": [
         {
-            "label": "help",
+            "label": "change build type",
             "type": "shell",
             "command": "cmake",
             "args": [
-                "-LH",
-                "-N",
                 "-B",
-                "build"
+                "build",
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=${input:buildType}"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -109,7 +58,7 @@
             }
         },
         {
-            "label": "configure",
+            "label": "change sanitizers",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -117,17 +66,12 @@
                 "build",
                 "-G",
                 "Ninja",
-                "-DCMAKE_BUILD_TYPE=${input:buildType}",
-                "-DBUILD_MODULE=${input:buildModule}",
-                "-DBUILD_EXAMPLES=${input:buildExamples}",
-                "-DBUILD_TESTS=${input:buildTests}",
+                "-DCMAKE_BUILD_TYPE=Debug",
                 "-DENABLE_UBSAN=${input:enableUBSAN}",
-                "-DENABLE_ASAN=${input:enableASAN}",
-                "-DENABLE_WERROR=${input:enableWerror}",
-                "-DVENDOR_SYSTEM=${input:vendorSysPkgs}"
+                "-DENABLE_ASAN=${input:enableASAN}"
             ],
             "options": {
-                "cwd": "${workspaceFolder}",
+                "cwd": "${workspaceFolder}"
             },
             "group": "build",
             "problemMatcher": [
@@ -161,30 +105,6 @@
                 "reveal": "always",
                 "panel": "shared",
                 "clear": false
-            }
-        },
-        {
-            "label": "test",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build",
-                "build",
-                "--target",
-                "test"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "group": {
-                "kind": "test",
-                "isDefault": true
-            },
-            "problemMatcher": [],
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "clear": true
             }
         },
         {
@@ -224,34 +144,22 @@
             "problemMatcher": [],
             "presentation": {
                 "reveal": "silent",
-                "panel": "shared"
-            }
-        },
-        {
-            "label": "submodules",
-            "type": "shell",
-            "command": "git submodule sync --recursive && git submodule update --init --recursive && git submodule foreach --recursive \"git reset --hard || :\" && git submodule foreach --recursive \"git clean -ffdx || :\"",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "presentation": {
-                "reveal": "always",
                 "panel": "shared",
                 "clear": true
             }
-        }
+        },
         {
             "label": "format",
             "type": "shell",
-            "command": "find mod_http3/ \\( -name '*.c' -o -name '*.cc' -o -name '*.h' -o -name '*.cpp' \\) -exec clang-format -style=file -i {} +",
+            "command": "find mod_http3 examples test \\( -name '*.c' -o -name '*.cc' -o -name '*.h' -o -name '*.cpp' \\) -exec clang-format -style=file -i {} +",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
             "presentation": {
                 "reveal": "silent",
-                "panel": "shared"
+                "panel": "shared",
+                "clear": true
             }
         }
     ]

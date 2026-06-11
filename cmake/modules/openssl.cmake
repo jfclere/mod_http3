@@ -27,7 +27,6 @@ else()
     require_initialized_submodule("${OPENSSL_DIRECTORY}")
     file(MAKE_DIRECTORY "${OPENSSL_OUTPUT_DIRECTORY}/logs")
 
-
     if(EXISTS "${OPENSSL_DIRECTORY}/Makefile")
 
       message(STATUS "[openssl] Cleaning previous build artifacts")

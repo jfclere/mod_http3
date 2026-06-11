@@ -1,4 +1,3 @@
-/* Auto-generated - do not edit */
 /*
  * Copyright (c) 2026 The mod_http3 Project Authors. All rights reserved.
  *
@@ -17,18 +16,24 @@
  * limitations under the License.
  */
 
-#ifndef MOD_HTTP3_VERSION_H
-#define MOD_HTTP3_VERSION_H
+#include "sput.h"
+#include <httpd.h>
 
-#define MOD_HTTP3_VERSION_MAJOR 0
-#define MOD_HTTP3_VERSION_MINOR 0
-#define MOD_HTTP3_VERSION_PATCH 15
+static void test_httpd_version(void)
+{
+    sput_fail_unless(AP_SERVER_MAJORVERSION_NUMBER == 2, "httpd major version == 2");
+    sput_fail_unless(AP_SERVER_MINORVERSION_NUMBER == 5, "httpd minor version == 5");
+}
 
-// Construct a 24-bit packed version number from major, minor and patch. Version 1.2.3 becomes 0x010203.
-#define MOD_HTTP3_MAKE_VERSION(major, minor, patch) (((major) << 16) | ((minor) << 8) | (patch))
+static void test_httpd_status_codes(void)
+{
+    sput_fail_unless(HTTP_OK == 200, "HTTP_OK is 200");
+    sput_fail_unless(HTTP_NOT_FOUND == 404, "HTTP_NOT_FOUND is 404");
+    sput_fail_unless(HTTP_INTERNAL_SERVER_ERROR == 500, "HTTP_INTERNAL_SERVER_ERROR is 500");
+}
 
-#define MOD_HTTP3_VERSION MOD_HTTP3_MAKE_VERSION(MOD_HTTP3_VERSION_MAJOR, MOD_HTTP3_VERSION_MINOR, MOD_HTTP3_VERSION_PATCH)
-
-#define MOD_HTTP3_VERSION_STRING "0.0.15"
-
-#endif
+void run_httpd_tests(void)
+{
+    sput_run_test(test_httpd_version);
+    sput_run_test(test_httpd_status_codes);
+}

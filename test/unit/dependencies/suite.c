@@ -16,10 +16,24 @@
  * limitations under the License.
  */
 
-#include <gtest/gtest.h>
+#include "sput.h"
 
-int main(int argc, char** argv)
+void run_dependencies_suite(void)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    sput_enter_suite("dependencies");
+
+    extern void run_nghttp3_tests(void);
+    run_nghttp3_tests();
+
+    extern void run_apr_tests(void);
+    run_apr_tests();
+
+    extern void run_apu_tests(void);
+    run_apu_tests();
+
+    extern void run_httpd_tests(void);
+    run_httpd_tests();
+
+    extern void run_openssl_tests(void);
+    run_openssl_tests();
 }

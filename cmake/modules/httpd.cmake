@@ -196,7 +196,6 @@ if(HTTPD_MMN LESS HTTPD_MMN_MIN)
     "  Some features may be unavailable.")
 endif()
 
-
 message(STATUS "[httpd] found (${HTTPD_VERSION}): ${HTTPD_OUTPUT_DIRECTORY}")
 
 add_library(httpd INTERFACE)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.14)
+project(mod_http3 VERSION 0.0.15)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -17,8 +17,7 @@ set(CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS TRUE)
 
 # -- CMake Modules Path --
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/external")
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/system")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/utils")
 
 # -- Global CMake Defaults --
@@ -87,14 +86,13 @@ endif()
 
 # -- Examples --
 if(BUILD_EXAMPLES)
-  add_subdirectory(mod_http3/examples)
+  add_subdirectory(examples)
 endif()
 
 # -- Tests --
 if(BUILD_TESTS)
   enable_testing()
-  include(googletest)
-  add_subdirectory(mod_http3/tests)
+  add_subdirectory(test)
 endif()
 
 # -- Installation --

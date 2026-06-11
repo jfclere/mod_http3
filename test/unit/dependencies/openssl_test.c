@@ -3,9 +3,6 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * This file is derived from code originally distributed as part of
- * the OpenSSL project and has been modified for use in mod_http3.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -19,42 +16,43 @@
  * limitations under the License.
  */
 
-#include <gtest/gtest.h>
-
-extern "C"
-{
+#include "sput.h"
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/opensslv.h>
 #include <openssl/ssl.h>
-}
 
-TEST(Dependencies, OpenSSL_VersionAtLeast3_5)
+static void test_openssl_version(void)
 {
-
-    // OpenSSL version should be >= 3.5.x
-    EXPECT_EQ(OPENSSL_VERSION_MAJOR, 3);
-    EXPECT_EQ(OPENSSL_VERSION_MINOR, 5);
-    EXPECT_GE(OPENSSL_VERSION_PATCH, 0);
+    sput_fail_unless(OPENSSL_VERSION_MAJOR == 3, "OpenSSL major version == 3");
+    sput_fail_unless(OPENSSL_VERSION_MINOR == 5, "OpenSSL minor version == 5");
 }
 
-TEST(Dependencies, OpenSSL_QuicClientMethod)
+static void test_openssl_quic_client_method(void)
 {
     const SSL_METHOD* method = OSSL_QUIC_client_method();
-    ASSERT_NE(method, nullptr) << "QUIC not available";
+    sput_fail_unless(method != NULL, "QUIC client method not NULL");
 }
 
-TEST(Dependencies, OpenSSL_QuicSSLContextCreation)
+static void test_openssl_quic_ssl_context_creation(void)
 {
     SSL_CTX* ctx = SSL_CTX_new(OSSL_QUIC_client_method());
-    ASSERT_NE(ctx, nullptr) << "Failed to create QUIC SSL_CTX";
+    sput_fail_unless(ctx != NULL, "QUIC SSL_CTX created");
     SSL_CTX_free(ctx);
 }
 
-TEST(Dependencies, OpenSSL_EVPDigestSHA256)
+static void test_openssl_evp_digest_sha256(void)
 {
     const EVP_MD* sha256 = EVP_sha256();
-    ASSERT_NE(sha256, nullptr);
-    EXPECT_EQ(EVP_MD_size(sha256), 32);
+    sput_fail_unless(sha256 != NULL, "EVP_sha256 not NULL");
+    sput_fail_unless(EVP_MD_size(sha256) == 32, "SHA256 digest size is 32");
+}
+
+void run_openssl_tests(void)
+{
+    sput_run_test(test_openssl_version);
+    sput_run_test(test_openssl_quic_client_method);
+    sput_run_test(test_openssl_quic_ssl_context_creation);
+    sput_run_test(test_openssl_evp_digest_sha256);
 }
