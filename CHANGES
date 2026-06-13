@@ -3,6 +3,24 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.16 (2026-06-12)
+--------------------
+  *) Split large monolithic files into h3_*.c/h units and renamed
+     version.h to h3_version.h.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Hidden all non-module symbols by default through CMake, only
+     the http3_module data symbol is exported.
+     [Tarek Ibrahim <tarek@pulsarxtech.com>]
+
+  *) Reviewed and applied per-file license headers with attribution.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) AP_MODULE_DECLARE_DATA in ap_config.h has been a no-op since
+     before GCC added visibility support. h3_private.h works around
+     it to actually export http3_module.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.15 (2026-06-11)
 --------------------
   *) Renamed .vscode config files to *.example.json and updated .gitignore

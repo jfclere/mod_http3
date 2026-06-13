@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.15)
+project(mod_http3 VERSION 0.0.16)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -52,7 +52,7 @@ set(WITH_HTTPD "" CACHE PATH "Path to httpd installation prefix (includes APR/AP
 set(WITH_APR "" CACHE PATH "Path to APR installation prefix")
 set(WITH_APU "" CACHE PATH "Path to APR-util installation prefix")
 
-# -- Generate version.h --
+# -- Generate h3_version.h --
 include(version.h)
 
 # -- Utility includes --
@@ -70,6 +70,7 @@ target_link_libraries(${PROJECT_NAME}-deps INTERFACE nghttp3 openssl httpd)
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS mod_http3/src/*.c)
 add_library(${PROJECT_NAME}-core OBJECT ${sources})
 target_link_libraries(${PROJECT_NAME}-core PUBLIC ${PROJECT_NAME}-deps)
+set_target_properties(${PROJECT_NAME}-core PROPERTIES C_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
 target_include_directories(${PROJECT_NAME}-core PUBLIC mod_http3/include)
 apply_target_flags(${PROJECT_NAME}-core)
 
