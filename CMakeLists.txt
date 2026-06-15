@@ -7,8 +7,12 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
   message(FATAL_ERROR "Unsupported compiler ${CMAKE_C_COMPILER_ID}. Only GCC is supported for now.")
 endif()
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif()
+
+# Add debug symbols
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -g")
 
 # -- CMake configuration --
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release")
@@ -71,6 +75,8 @@ target_link_libraries(${PROJECT_NAME}-deps INTERFACE nghttp3 openssl httpd)
 
 # -- Core object library --
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS mod_http3/src/*.c)
+# Exclude old standalone server code (ossl-nghttp3.c) - we copy needed functions to mod_http3.c
+list(FILTER sources EXCLUDE REGEX ".*ossl-nghttp3\\.c$")
 add_library(${PROJECT_NAME}-core OBJECT ${sources})
 target_link_libraries(${PROJECT_NAME}-core PUBLIC ${PROJECT_NAME}-deps)
 target_include_directories(${PROJECT_NAME}-core PUBLIC mod_http3/include)

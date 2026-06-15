@@ -1310,7 +1310,7 @@ static void handle_events_from_ids(struct ssl_id* ssl_ids, server_rec* s)
     }
 }
 
-static nghttp3_ssize step_read_data(nghttp3_conn* /*conn*/, int64_t stream_id, nghttp3_vec* vec, size_t /*veccnt*/, uint32_t* pflags, void* user_data, void* /*stream_user_data*/)
+nghttp3_ssize step_read_data(nghttp3_conn* /*conn*/, int64_t stream_id, nghttp3_vec* vec, size_t /*veccnt*/, uint32_t* pflags, void* user_data, void* /*stream_user_data*/)
 {
     struct h3ssl* h3ssl = (struct h3ssl*)user_data;
     struct h3_request* h3req = get_h3_request(h3ssl, stream_id);
@@ -1594,7 +1594,7 @@ static int add_header_entry(void* rec, const char* key, const char* value)
 }
 
 /* Build the nv using the respnse from httpd */
-static void build_nv_from_response(nghttp3_nv* resp, size_t* num_nv, size_t max_nv, h3_conn_ctx_t* h3ctx)
+void build_nv_from_response(nghttp3_nv* resp, size_t* num_nv, size_t max_nv, h3_conn_ctx_t* h3ctx)
 {
     h3_nvs_t h3_nvs;
     ap_bucket_response* response = h3ctx->resp;
