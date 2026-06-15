@@ -1,0 +1,765 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 83394ba..ea2a8ea 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,9 +7,13 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+   message(FATAL_ERROR "Unsupported compiler ${CMAKE_C_COMPILER_ID}. Only GCC is supported for now.")
+ endif()
+ if(NOT CMAKE_BUILD_TYPE)
+-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
++    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+ endif()
+ 
++# Add debug symbols
++set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -O0")
++set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -g")
++
+ # -- CMake configuration --
+ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug;Release")
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+diff --git a/mod_http3/src/mod_http3.c b/mod_http3/src/mod_http3.c
+index 052c5b8..0bf482c 100644
+--- a/mod_http3/src/mod_http3.c
++++ b/mod_http3/src/mod_http3.c
+@@ -23,6 +23,7 @@
+  * limitations under the License.
+  */
+ 
++#include <string.h>
+ #include <httpd.h>
+ 
+ #include <http_config.h>
+@@ -41,8 +42,16 @@
+ #include <mpm_common.h>
+ #include <scoreboard.h>
+ #include <stdio.h>
++#include <ap_listen.h>
++
++#include <sys/socket.h>
++#include <netinet/in.h>
++
++#include <openssl/ssl.h>
++#include <openssl/err.h>
+ 
+ #include "ossl-nghttp3.h"
++#include "h3_session.h"
+ 
+ module AP_MODULE_DECLARE_DATA http3_module;
+ 
+@@ -61,6 +70,206 @@ static ap_filter_rec_t* h3_proto_in_filter_handle;
+ 
+ static apr_socket_t* dummy_socket;
+ 
++/* Forward declaration */
++struct h3_session;
++
++/* QUIC listener data for MPM integration */
++typedef struct {
++    SSL_CTX *ssl_ctx;
++    SSL *ssl_listener;
++    apr_pool_t *pool;
++    server_rec *server;
++    apr_hash_t *connections;      /* conn_id -> SSL* (QUIC connections) - parent only */
++    /* Note: sessions hash is stored in child_sessions global, not here, due to fork() */
++} h3_quic_listener_t;
++
++/* Child-specific global: sessions hash (can't store in ql due to fork) */
++static apr_hash_t *child_sessions = NULL;
++
++/* QUIC connection state */
++#define H3_QUIC_MAGIC 0x48335155  /* "H3QU" in hex */
++typedef struct {
++    apr_uint32_t magic;         /* Magic number to identify QUIC connections */
++    SSL *ssl_conn;
++    SSL *ssl_stream;
++    apr_uint64_t stream_id;
++    apr_pool_t *pool;
++    h3_quic_listener_t *listener;
++    apr_socket_t *dummy_sock;   /* Dummy socket for Apache to do operations on */
++} h3_quic_conn_state_t;
++
++/* QUIC accept function for MPM integration */
++static apr_status_t h3_quic_accept(void **accepted, ap_listen_rec *lr, apr_pool_t *ptrans)
++{
++    h3_quic_listener_t *ql;
++    SSL *conn = NULL;
++
++    /* Retrieve QUIC listener data from socket */
++    apr_socket_data_get((void **)&ql, "quic_listener", lr->sd);
++
++    if (!ql || !ql->ssl_listener) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, NULL,
++                     "h3_quic_accept: invalid listener data");
++        return APR_EGENERAL;
++    }
++
++    *accepted = NULL;
++
++    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, ql->server,
++                 "h3_quic_accept: CALLED by MPM (active sessions=%d)",
++                 child_sessions ? apr_hash_count(child_sessions) : 0);
++
++    /* MPM called us because UDP socket has activity - process ALL connections */
++    SSL_handle_events(ql->ssl_listener);
++
++    /* First, try to accept new QUIC connections and create sessions for them */
++    conn = SSL_accept_connection(ql->ssl_listener, SSL_ACCEPT_STREAM_NO_BLOCK);
++    if (conn) {
++        const unsigned char *alpn_data = NULL;
++        unsigned int alpn_len = 0;
++        SSL_get0_alpn_selected(conn, &alpn_data, &alpn_len);
++
++        /* Set connection to non-blocking mode */
++        SSL_set_blocking_mode(conn, 0);
++
++        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
++                     "h3_quic_accept: accepted new QUIC connection, ALPN=%.*s",
++                     alpn_len, alpn_data ? (const char*)alpn_data : "(none)");
++
++        /* Create h3_session for this QUIC connection immediately
++         * We use a long-lived pool from the listener for the session */
++        h3_session *session = NULL;
++        apr_status_t rv = h3_session_create(&session, ql->server, ql->ssl_listener, conn, ql->pool);
++        if (rv != APR_SUCCESS) {
++            ap_log_error(APLOG_MARK, APLOG_ERR, rv, ql->server,
++                         "h3_quic_accept: failed to create h3_session");
++            SSL_free(conn);
++            return rv;
++        }
++
++        /* Store session in child_sessions hash */
++        if (!child_sessions) {
++            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ql->server,
++                         "h3_quic_accept: child_sessions not initialized!");
++            return APR_EGENERAL;
++        }
++
++        apr_uint64_t conn_id = (apr_uint64_t)(uintptr_t)conn;
++        apr_uint64_t *conn_key = apr_pmemdup(ql->pool, &conn_id, sizeof(conn_id));
++        apr_hash_set(child_sessions, conn_key, sizeof(*conn_key), session);
++
++        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
++                     "h3_quic_accept: created and stored h3_session for new QUIC connection");
++
++        /* DON'T return a conn_rec yet - we need to wait for a complete HTTP request
++         * Fall through to session processing below */
++    }
++
++    /* Process all existing sessions and look for complete HTTP requests */
++    if (child_sessions && apr_hash_count(child_sessions) > 0) {
++        apr_hash_index_t *hi;
++        for (hi = apr_hash_first(ptrans, child_sessions); hi; hi = apr_hash_next(hi)) {
++            h3_session *session = apr_hash_this_val(hi);
++
++            /* Process this session - accept streams, send/receive data */
++            apr_status_t rv = h3_session_process(session);
++
++            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, ql->server,
++                         "h3_quic_accept: processed session %p, rv=%d, ready_streams=%d",
++                         (void*)session, rv, session->ready_streams->nelts);
++
++            /* Check if this session has a complete HTTP request ready */
++            if (session->ready_streams->nelts > 0) {
++                /* We have a ready stream! Pop it from the queue */
++                h3_stream **streams = (h3_stream **)session->ready_streams->elts;
++                h3_stream *ready_stream = streams[0];
++
++                /* Remove from queue (shift remaining elements) */
++                if (session->ready_streams->nelts > 1) {
++                    memmove(&streams[0], &streams[1],
++                            (session->ready_streams->nelts - 1) * sizeof(h3_stream *));
++                }
++                session->ready_streams->nelts--;
++
++                ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
++                             "h3_quic_accept: found ready stream %lu, creating conn_rec",
++                             (unsigned long)ready_stream->stream_id);
++
++                /* Create a dummy socket for this HTTP/3 stream/request */
++                apr_socket_t *dummy_sock;
++                apr_status_t rv = apr_socket_create(&dummy_sock, APR_INET, SOCK_STREAM,
++                                                      APR_PROTO_TCP, ptrans);
++                if (rv != APR_SUCCESS) {
++                    ap_log_error(APLOG_MARK, APLOG_ERR, rv, ql->server,
++                                 "h3_quic_accept: failed to create dummy socket for stream");
++                    continue;  /* Try next session */
++                }
++
++                /* Create QUIC state for this stream */
++                h3_quic_conn_state_t *qcs = apr_pcalloc(ptrans, sizeof(h3_quic_conn_state_t));
++                qcs->magic = H3_QUIC_MAGIC;
++                qcs->ssl_conn = session->ssl_conn;
++                qcs->ssl_stream = ready_stream->ssl_stream;
++                qcs->stream_id = ready_stream->stream_id;
++                qcs->pool = ptrans;
++                qcs->listener = ql;
++                qcs->dummy_sock = dummy_sock;
++
++                /* Attach qcs to socket */
++                rv = apr_socket_data_set(dummy_sock, qcs, "h3_state", NULL);
++                if (rv != APR_SUCCESS) {
++                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, ql->server,
++                                 "h3_quic_accept: apr_socket_data_set failed");
++                }
++
++                /* Also store the stream pointer so we can access it later */
++                rv = apr_socket_data_set(dummy_sock, ready_stream, "h3_stream", NULL);
++                if (rv != APR_SUCCESS) {
++                    ap_log_error(APLOG_MARK, APLOG_WARNING, rv, ql->server,
++                                 "h3_quic_accept: apr_socket_data_set for stream failed");
++                }
++
++                *accepted = dummy_sock;
++                ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
++                             "h3_quic_accept: returning conn_rec for stream %lu",
++                             (unsigned long)ready_stream->stream_id);
++                return APR_SUCCESS;
++            }
++        }
++
++        /* Processed all sessions, no complete request ready */
++        ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, ql->server,
++                     "h3_quic_accept: processed %u sessions, no request ready",
++                     apr_hash_count(child_sessions));
++    }
++    return APR_EAGAIN;
++}
++
++/* ALPN callback for server-side QUIC */
++static int h3_alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
++                              const unsigned char *in, unsigned int inlen, void *arg)
++{
++    static const unsigned char h3[] = "\x02h3";
++    (void)arg;
++
++    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, NULL,
++                 "h3_alpn_select_cb: client offered %u bytes of ALPN", inlen);
++
++    /* Try to negotiate h3 from client's ALPN list */
++    int result = SSL_select_next_proto((unsigned char **)out, outlen, h3, sizeof(h3) - 1,
++                                        in, inlen);
++
++    if (result == OPENSSL_NPN_NEGOTIATED) {
++        ap_log_error(APLOG_MARK, APLOG_INFO, 0, NULL,
++                     "h3_alpn_select_cb: successfully negotiated h3");
++        return SSL_TLSEXT_ERR_OK;
++    }
++
++    ap_log_error(APLOG_MARK, APLOG_ERR, 0, NULL,
++                 "h3_alpn_select_cb: failed to negotiate h3 (result=%d)", result);
++    return SSL_TLSEXT_ERR_NOACK;
++}
++
+ static apr_port_t get_server_port(server_rec* s)
+ {
+     server_addr_rec* sar;
+@@ -156,17 +365,53 @@ static int h3_post_config(apr_pool_t* p, apr_pool_t* plog, apr_pool_t* ptemp, se
+     }
+ 
+     ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, s, "h3_post_config: %d cert_path=%s key_path=%s", getpid(), conf->cert_path, conf->key_path);
++
++    /* QUIC listener now created per-child in h3_child_init() to avoid SO_REUSEPORT issues.
++     * Each child process creates its own UDP socket, avoiding kernel load balancing that
++     * would route packets to wrong child (QUIC is stateful, needs connection affinity). */
++    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
++                 "mod_http3: QUIC listeners will be created per-child in h3_child_init");
++
++    /* Listener creation moved to h3_child_init() - see comments above */
+     return OK;
+ }
+ 
++
+ /* WE DON'T NEED THAT ONE */
+ static int h3_hook_process_connection(conn_rec* c)
+ {
+     const char* is_mod_http3 = apr_table_get(c->notes, "IS_mod_http3");
+-    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_process_connection %s", is_mod_http3);
++    ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, c, "h3_hook_process_connection %s", is_mod_http3);
+     if (is_mod_http3 == NULL)
+         return DECLINED;
+-    return OK;
++
++    /* For QUIC connections, the session is already created in h3_quic_accept
++     * This conn_rec represents one HTTP/3 stream (request), not the whole QUIC connection
++     * Just let Apache process the request normally through the filters */
++    h3_quic_conn_state_t *qcs = ap_get_module_config(c->conn_config, &http3_module);
++    if (qcs && qcs->magic == H3_QUIC_MAGIC) {
++        ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, c,
++                      "h3_hook_process_connection: HTTP/3 stream %lu, letting Apache process request",
++                      (unsigned long)qcs->stream_id);
++
++        /* Get the h3_stream if attached */
++        h3_stream *stream = (h3_stream *)apr_table_get(c->notes, "h3_stream");
++        if (stream) {
++            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, c,
++                          "h3_hook_process_connection: found h3_stream %lu attached to conn_rec",
++                          (unsigned long)stream->stream_id);
++
++            /* TODO: Populate request_rec from stream headers here
++             * For now, just pass through to let Apache's normal request processing handle it */
++        }
++
++        /* Let Apache continue with normal request processing
++         * The filters will handle reading/writing from the QUIC stream */
++        return OK;
++    }
++
++    /* Not a QUIC connection, continue with normal processing */
++    return DECLINED;
+ }
+ 
+ static int h3_hook_pre_connection(conn_rec* c, void* /*csd*/)
+@@ -175,6 +420,11 @@ static int h3_hook_pre_connection(conn_rec* c, void* /*csd*/)
+     ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, c, "h3_hook_pre_connection %s", is_mod_http3);
+     if (is_mod_http3 == NULL)
+         return DECLINED;
++
++    /* Don't return DONE - it causes immediate connection close
++     * Instead rely on ssl-bypass note to prevent mod_ssl from wrapping this */
++    ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, c,
++                  "h3_hook_pre_connection: QUIC connection");
+     return OK;
+ }
+ 
+@@ -191,8 +441,21 @@ static void h3_hook_pre_read_request(request_rec* r, conn_rec* /*c*/)
+ static apr_status_t h3_filter_out(ap_filter_t* f, apr_bucket_brigade* bb)
+ {
+     apr_bucket* b;
++    h3_quic_conn_state_t *qcs;
++
++    ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, f->c, "h3_filter_out CALLED");
++
++    /* Check if this is a QUIC connection */
++    qcs = ap_get_module_config(f->c->conn_config, &http3_module);
++
++    if (!qcs || qcs->magic != H3_QUIC_MAGIC) {
++        /* Not a QUIC connection - pass through */
++        ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_out: not QUIC, passing through");
++        ap_remove_output_filter(f);
++        return ap_pass_brigade(f->next, bb);
++    }
+ 
+-    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_out");
++    /* QUIC connection - write to SSL stream */
+     for (b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b))
+     {
+         if (APR_BUCKET_IS_METADATA(b))
+@@ -250,6 +513,29 @@ static apr_status_t h3_filter_out(ap_filter_t* f, apr_bucket_brigade* bb)
+         {
+             ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_out AP_BUCKET_IS_RESPONSE");
+         }
++
++        /* Write data buckets to QUIC stream */
++        if (!APR_BUCKET_IS_METADATA(b)) {
++            const char *data;
++            apr_size_t len;
++            apr_status_t rv;
++
++            rv = apr_bucket_read(b, &data, &len, APR_BLOCK_READ);
++            if (rv == APR_SUCCESS && len > 0) {
++                size_t written = 0;
++                int ssl_ret = SSL_write_ex(qcs->ssl_stream, data, len, &written);
++
++                if (ssl_ret > 0) {
++                    ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c,
++                                 "h3_filter_out: wrote %zu bytes to QUIC stream", written);
++                } else {
++                    int ssl_err = SSL_get_error(qcs->ssl_stream, ssl_ret);
++                    ap_log_cerror(APLOG_MARK, APLOG_ERR, 0, f->c,
++                                 "h3_filter_out: SSL_write_ex failed (ssl_err=%d)", ssl_err);
++                    return APR_EGENERAL;
++                }
++            }
++        }
+     }
+ 
+     ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_out DONE");
+@@ -473,21 +759,65 @@ static apr_status_t h3_filter_in_proto(ap_filter_t* f, apr_bucket_brigade* bb, a
+     return APR_SUCCESS;
+ }
+ 
+-static apr_status_t h3_filter_in(ap_filter_t* f, apr_bucket_brigade* bb, ap_input_mode_t mode, apr_read_type_e /*block*/, apr_off_t /*readbytes*/)
++static apr_status_t h3_filter_in(ap_filter_t* f, apr_bucket_brigade* bb, ap_input_mode_t mode, apr_read_type_e block, apr_off_t readbytes)
+ {
+-    ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_in mode %d", mode);
+-    if (mode == AP_MODE_READBYTES)
+-    {
+-        ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_in AP_MODE_READBYTES");
+-        if (f->ctx == NULL)
+-        {
+-            apr_bucket* e = apr_bucket_eos_create(f->c->bucket_alloc);
++    h3_quic_conn_state_t *qcs;
++
++    ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, f->c, "h3_filter_in mode %d CALLED", mode);
++
++    /* Check if this is a QUIC connection */
++    qcs = ap_get_module_config(f->c->conn_config, &http3_module);
++
++    if (!qcs || qcs->magic != H3_QUIC_MAGIC) {
++        /* Not a QUIC connection - pass through */
++        ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_in: not QUIC, removing filter");
++        ap_remove_input_filter(f);
++        return ap_get_brigade(f->next, bb, mode, block, readbytes);
++    }
++
++    /* QUIC connection - read from SSL stream */
++    if (mode == AP_MODE_READBYTES || mode == AP_MODE_GETLINE || mode == AP_MODE_EATCRLF || mode == AP_MODE_SPECULATIVE) {
++        char buffer[8192];
++        size_t bytes_read = 0;
++        int ssl_ret;
++
++        ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c,
++                     "h3_filter_in: reading from QUIC stream %lu",
++                     (unsigned long)qcs->stream_id);
++
++        /* Read from QUIC stream */
++        ssl_ret = SSL_read_ex(qcs->ssl_stream, buffer, sizeof(buffer), &bytes_read);
++
++        if (ssl_ret > 0 && bytes_read > 0) {
++            apr_bucket *b;
++            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c,
++                         "h3_filter_in: read %zu bytes from QUIC stream", bytes_read);
++
++            /* Create bucket with data */
++            b = apr_bucket_heap_create(buffer, bytes_read, NULL, f->c->bucket_alloc);
++            APR_BRIGADE_INSERT_TAIL(bb, b);
++
++            return APR_SUCCESS;
++        } else {
++            int ssl_err = SSL_get_error(qcs->ssl_stream, ssl_ret);
++
++            if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE) {
++                /* No data available yet */
++                ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c,
++                             "h3_filter_in: EAGAIN from SSL_read_ex");
++                return APR_EAGAIN;
++            }
++
++            /* End of stream or error */
++            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, f->c,
++                         "h3_filter_in: EOF or error (ssl_err=%d)", ssl_err);
++
++            apr_bucket *e = apr_bucket_eos_create(f->c->bucket_alloc);
+             APR_BRIGADE_INSERT_TAIL(bb, e);
+-            f->ctx = (void*)1;
+             return APR_EOF;
+         }
+-        ap_remove_input_filter(f);
+     }
++
+     return APR_EOF;
+ }
+ struct h3_stuff
+@@ -596,12 +926,181 @@ static void* APR_THREAD_FUNC worker_thread_main(apr_thread_t* /*thread*/, void*
+ /* The child creates a thread that waits on the udp socket and create another thread to process a request */
+ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
+ {
++    h3_quic_listener_t *ql;
++    apr_socket_t *udp_sock;
++    apr_sockaddr_t *bind_addr;
++    ap_listen_rec *lr;
++    apr_status_t rv;
++    apr_os_sock_t fd;
++    BIO *bio;
++    h3_server_conf* conf;
++
++    /* Create child-specific sessions hash (can't modify parent's ql after fork) */
++    child_sessions = apr_hash_make(pchild);
++
++    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
++                 "h3_child_init: created child-specific sessions hash");
++
++    /* Find the server config with cert/key configured */
++    server_rec* current_server = s;
++    conf = NULL;
++    while (current_server) {
++        h3_server_conf* tmp_conf = ap_get_module_config(current_server->module_config, &http3_module);
++        if (tmp_conf->cert_path && tmp_conf->key_path) {
++            conf = tmp_conf;
++            conf->host_port = get_server_port(current_server);
++            break;
++        }
++        current_server = current_server->next;
++    }
++
++    if (conf == NULL || !conf->cert_path || !conf->key_path) {
++        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s,
++                     "h3_child_init: no cert/key configured, skipping QUIC listener");
++        return;
++    }
++
++    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
++                 "h3_child_init: creating child-specific QUIC listener on port %d", conf->host_port);
++
++    /* Create bind address */
++    rv = apr_sockaddr_info_get(&bind_addr, NULL, APR_INET6, conf->host_port, 0, pchild);
++    if (rv != APR_SUCCESS) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
++                     "h3_child_init: Failed to create bind address for port %d", conf->host_port);
++        return;
++    }
++
++    /* Create our own UDP socket first */
++    rv = apr_socket_create(&udp_sock, APR_INET6, SOCK_DGRAM, APR_PROTO_UDP, pchild);
++    if (rv != APR_SUCCESS) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
++                     "h3_child_init: Failed to create UDP socket");
++        return;
++    }
++
++    /* Get the raw file descriptor */
++    apr_os_sock_get(&fd, udp_sock);
++
++    /* NO SO_REUSEPORT - each child has its own socket */
++
++    /* Set non-blocking */
++    apr_socket_opt_set(udp_sock, APR_SO_NONBLOCK, 1);
++
++    /* Bind socket */
++    rv = apr_socket_bind(udp_sock, bind_addr);
++    if (rv != APR_SUCCESS) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
++                     "h3_child_init: Failed to bind UDP socket to port %d", conf->host_port);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Create QUIC listener data */
++    ql = apr_pcalloc(pchild, sizeof(*ql));
++    ql->pool = pchild;
++    ql->server = s;
++    ql->connections = apr_hash_make(pchild);
++
++    /* Create SSL context */
++    ql->ssl_ctx = SSL_CTX_new(OSSL_QUIC_server_method());
++    if (!ql->ssl_ctx) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to create SSL_CTX");
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Load certificate and key */
++    if (SSL_CTX_use_certificate_chain_file(ql->ssl_ctx, conf->cert_path) <= 0) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to load certificate: %s", conf->cert_path);
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    if (SSL_CTX_use_PrivateKey_file(ql->ssl_ctx, conf->key_path, SSL_FILETYPE_PEM) <= 0) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to load private key: %s", conf->key_path);
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Set ALPN callback to negotiate h3 */
++    SSL_CTX_set_alpn_select_cb(ql->ssl_ctx, h3_alpn_select_cb, NULL);
++
++    /* Create SSL listener */
++    ql->ssl_listener = SSL_new_listener(ql->ssl_ctx, 0);
++    if (!ql->ssl_listener) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to create SSL listener");
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Create BIO for our UDP socket and attach to SSL listener */
++    bio = BIO_new_dgram(fd, BIO_NOCLOSE);
++    if (!bio) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to create BIO for UDP socket");
++        SSL_free(ql->ssl_listener);
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    SSL_set_bio(ql->ssl_listener, bio, bio);
++
++    /* Start listening */
++    if (!SSL_listen(ql->ssl_listener)) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: SSL_listen failed");
++        SSL_free(ql->ssl_listener);
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Set non-blocking mode */
++    if (!SSL_set_blocking_mode(ql->ssl_listener, 0)) {
++        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
++                     "h3_child_init: Failed to set non-blocking mode");
++        SSL_free(ql->ssl_listener);
++        SSL_CTX_free(ql->ssl_ctx);
++        apr_socket_close(udp_sock);
++        return;
++    }
++
++    /* Attach QUIC listener data to socket */
++    apr_socket_data_set(udp_sock, ql, "quic_listener", NULL);
++
++    /* Create Apache listener record FOR THIS CHILD */
++    lr = apr_pcalloc(pchild, sizeof(*lr));
++    lr->sd = udp_sock;
++    lr->bind_addr = bind_addr;
++    lr->accept_func = h3_quic_accept;
++    lr->active = 1;
++    lr->protocol = "h3";
++
++    /* Add to this child's listener list */
++    lr->next = ap_listeners;
++    ap_listeners = lr;
++
++    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
++                 "h3_child_init: registered child-specific QUIC listener on port %d", conf->host_port);
++
++    return;
++
++    /* OLD STANDALONE CODE - DISABLED
+     apr_status_t rv;
+     apr_thread_t* worker_thread;
+     struct h3_stuff* h3;
+     h3_server_conf* conf;
+ 
+-    /* Find the server config with cert/key configured */
++    // Find the server config with cert/key configured
+     server_rec* current_server = s;
+     conf = NULL;
+     while (current_server)
+@@ -630,6 +1129,7 @@ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
+     {
+         ap_log_error(APLOG_MARK, APLOG_CRIT, rv, s, "h3_child_init: Failed to create worker thread: %d", rv);
+     }
++    END OLD STANDALONE CODE */
+ }
+ static void h3_c1_child_stopping(apr_pool_t* /*pool*/, int graceful)
+ {
+@@ -667,10 +1167,121 @@ static void h3_filter_last(request_rec* r)
+ /* Configuration directives */
+ static const command_rec h3_cmds[] = {AP_INIT_TAKE1("H3CertificatePath", set_h3_cert_path, NULL, RSRC_CONF, "Path to the SSL certificate file for HTTP/3"), AP_INIT_TAKE1("H3CertificateKeyPath", set_h3_key_path, NULL, RSRC_CONF, "Path to the SSL certificate key file for HTTP/3"), {NULL}};
+ 
++/* Hook into connection creation to handle QUIC streams from MPM */
++static conn_rec *h3_create_connection(apr_pool_t *ptrans, server_rec *server,
++                                       apr_socket_t *csd, long conn_id,
++                                       void *sbh, apr_bucket_alloc_t *alloc)
++{
++    h3_quic_conn_state_t *qcs = NULL;
++    apr_status_t rv;
++
++    /* Try to get our h3 state from the socket's user data */
++    rv = apr_socket_data_get((void **)&qcs, "h3_state", csd);
++    if (rv != APR_SUCCESS || !qcs || qcs->magic != H3_QUIC_MAGIC) {
++        /* Not a QUIC connection, let core handler create it */
++        ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, server,
++                     "h3_create_connection: not QUIC (rv=%d, qcs=%p, magic=%08x), passing to core",
++                     rv, (void*)qcs, qcs ? qcs->magic : 0);
++        return NULL;
++    }
++
++    /* Try to get the h3_stream from the socket's user data */
++    h3_stream *stream = NULL;
++    apr_socket_data_get((void **)&stream, "h3_stream", csd);
++
++    ap_log_error(APLOG_MARK, APLOG_INFO, 0, server,
++                 "h3_create_connection: QUIC stream detected (stream_id=%lu), creating conn_rec",
++                 stream ? (unsigned long)stream->stream_id : 0UL);
++
++    /* Create the connection record for this HTTP/3 stream/request */
++    conn_rec *c = apr_pcalloc(ptrans, sizeof(conn_rec));
++    apr_sockaddr_t *fake_local, *fake_client;
++
++    c->pool = ptrans;
++    c->base_server = server;
++
++    /* Create dummy addresses to prevent crashes - TODO: extract from QUIC SSL */
++    apr_sockaddr_info_get(&fake_local, "127.0.0.1", APR_INET, 4433, 0, ptrans);
++    apr_sockaddr_info_get(&fake_client, "127.0.0.1", APR_INET, 0, 0, ptrans);
++
++    c->local_addr = fake_local;
++    c->client_addr = fake_client;
++    c->local_ip = apr_pstrdup(ptrans, "127.0.0.1");
++    c->client_ip = apr_pstrdup(ptrans, "127.0.0.1");
++    c->conn_config = ap_create_conn_config(ptrans);
++    c->notes = apr_table_make(ptrans, 5);
++    c->id = conn_id;
++    c->bucket_alloc = alloc;
++    c->sbh = sbh;
++    c->keepalives = 0;
++    c->log = NULL;
++    c->aborted = 0;  /* Don't set aborted yet - let connection process first */
++    c->input_filters = NULL;
++    c->output_filters = NULL;
++    c->keepalive = AP_CONN_CLOSE;  /* Don't try to keep alive QUIC streams */
++    c->clogging_input_filters = 1;  /* Prevent socket operations */
++
++    /* Store QUIC state in connection config */
++    ap_set_module_config(c->conn_config, &http3_module, qcs);
++
++    /* Store the h3_stream pointer if we have one */
++    if (stream) {
++        apr_table_setn(c->notes, "h3_stream", (const char *)stream);
++        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, server,
++                     "h3_create_connection: attached h3_stream %lu to conn_rec",
++                     (unsigned long)stream->stream_id);
++    }
++
++    /* Mark this as a QUIC/HTTP3 connection */
++    apr_table_set(c->notes, "IS_mod_http3", "1");
++
++    /* Tell mod_ssl to skip this connection - QUIC has TLS built-in */
++    apr_table_setn(c->notes, "ssl-bypass", "1");
++
++    /* Use the dummy socket for core module config so Apache can do operations
++     * The dummy socket is a real socketpair that Apache can set options on,
++     * but we'll do actual I/O through our QUIC SSL streams in the filters */
++    ap_set_core_module_config(c->conn_config, qcs->dummy_sock);
++
++    /* Install I/O filters for QUIC stream */
++    ap_add_input_filter_handle(h3_net_in_filter_handle, NULL, NULL, c);
++    ap_add_output_filter_handle(h3_net_out_filter_handle, NULL, NULL, c);
++
++    ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, server,
++                 "h3_create_connection: created conn_rec for stream %"
++                 APR_UINT64_T_FMT " with filters", qcs->stream_id);
++
++    return c;
++}
++
++static int h3_hook_pre_close_connection(conn_rec* c)
++{
++    const char* is_mod_http3 = apr_table_get(c->notes, "IS_mod_http3");
++    if (is_mod_http3) {
++        ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, c,
++                      "h3_hook_pre_close_connection: QUIC connection closing");
++
++        /* Apache can close the dummy socket normally - it's a real socketpair */
++        /* We just need to clean up our QUIC SSL objects here */
++        h3_quic_conn_state_t *qcs = ap_get_module_config(c->conn_config, &http3_module);
++        if (qcs && qcs->ssl_conn) {
++            ap_log_cerror(APLOG_MARK, APLOG_DEBUG, 0, c,
++                          "h3_hook_pre_close_connection: cleaning up QUIC SSL connection");
++            SSL_free(qcs->ssl_conn);
++            qcs->ssl_conn = NULL;
++        }
++
++        return OK;
++    }
++    return DECLINED;
++}
++
+ static void register_hooks(apr_pool_t* /*p*/)
+ {
+     ap_hook_post_config(h3_post_config, NULL, NULL, APR_HOOK_MIDDLE);
++    ap_hook_create_connection(h3_create_connection, NULL, NULL, APR_HOOK_FIRST);
+     ap_hook_pre_connection(h3_hook_pre_connection, NULL, NULL, APR_HOOK_REALLY_FIRST);
++    ap_hook_pre_close_connection(h3_hook_pre_close_connection, NULL, NULL, APR_HOOK_REALLY_FIRST);
+     ap_hook_process_connection(h3_hook_process_connection, NULL, NULL, APR_HOOK_REALLY_FIRST);
+     ap_hook_create_request(h3_hook_http_create_request, NULL, NULL, APR_HOOK_REALLY_FIRST);
+     ap_hook_pre_read_request(h3_hook_pre_read_request, NULL, NULL, APR_HOOK_MIDDLE);
