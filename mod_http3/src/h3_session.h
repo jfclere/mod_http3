@@ -31,6 +31,9 @@ struct h3_session {
     /* Queue of streams with complete HTTP requests ready to process */
     apr_array_header_t *ready_streams;  /* Array of h3_stream* with complete requests */
 
+    /* Control stream flag */
+    int control_streams_created;    /* 1 if control/QPACK streams have been created */
+
     /* Bridge thread for UDP socket monitoring */
     apr_thread_t *monitor_thread;   /* Thread that monitors UDP socket */
     int udp_fd;                     /* UDP socket file descriptor from OpenSSL */
@@ -67,6 +70,16 @@ struct h3_stream {
 
 /* Create a new HTTP/3 session */
 apr_status_t h3_session_create(h3_session **psession,
+                               server_rec *s,
+                               SSL *ssl_listener,
+                               SSL *ssl_conn,
+                               apr_pool_t *pool);
+
+/* Create control and QPACK streams - call when SSL_POLL_EVENT_OSU fires */
+apr_status_t h3_session_create_control_streams(h3_session *session);
+
+/* Original declaration removed - replaced above */
+apr_status_t h3_session_create_REMOVED(h3_session **psession,
                                 server_rec *s,
                                 SSL *ssl_listener,
                                 SSL *ssl_conn,
