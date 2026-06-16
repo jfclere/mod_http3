@@ -933,21 +933,23 @@ static int read_from_ssl_ids(struct ssl_id* ssl_ids, struct activeh3ssl* activeh
         abort();
 
     /*
-     * SSL_POLL_FLAG_NO_HANDLE_EVENTS would require to use:
-     * SSL_get_event_timeout on the connection stream
-     * select/wait using the timeout value (which could be no wait time)
-     * SSL_handle_events
-     * SSL_poll
-     * for the moment we let SSL_poll to performs ticking internally
-     * on an automatic basis.
+     * REMOVED: This function is OLD code that conflicts with the new architecture.
+     * The thread in mod_http3.c now does ALL SSL_poll processing.
+     * There can be ONLY ONE SSL_poll in the entire module!
      */
-    ret = SSL_poll(items, numitem, sizeof(SSL_POLL_ITEM), &nz_timeout, SSL_POLL_FLAG_NO_HANDLE_EVENTS, &result_count);
-    if (!ret)
-    {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "SSL_poll failed");
-        abort();
-        return -1; /* something is wrong */
+    ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "read_from_ssl_ids: OLD UNUSED FUNCTION CALLED - should never happen!");
+    abort();
+    return -1;
+
+    /* SSL_poll REMOVED - only thread in mod_http3.c calls SSL_poll! */
+// DELETED:     ret = SSL_poll(items, numitem, sizeof(SSL_POLL_ITEM), &nz_timeout, SSL_POLL_FLAG_NO_HANDLE_EVENTS, &result_count);
+// DELETED:     if (!ret)
+// DELETED:     {
+// DELETED:         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s, "SSL_poll failed");
+// DELETED:         abort();
+// DELETED:         return -1;
     }
+    */
     ap_log_error(APLOG_MARK, APLOG_TRACE8, 0, s, "read_from_ssl_ids %ld events", (unsigned long)result_count);
     if (result_count == 0)
     {

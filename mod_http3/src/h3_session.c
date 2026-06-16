@@ -443,25 +443,72 @@ apr_status_t h3_session_create(h3_session **psession,
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
                   "h3_session_create: nghttp3 connection created, now creating SSL streams");
 
+    /* Initialize control streams flag - will be created when SSL_POLL_EVENT_OSU fires */
+    session->control_streams_created = 0;
+
+    *psession = session;
+    return APR_SUCCESS;
+}
+
+/* Create control and QPACK streams - called when SSL_POLL_EVENT_OSU fires */
+apr_status_t h3_session_create_control_streams(h3_session *session)
+{
+    server_rec *s = session->s;
+    SSL *ssl_conn = session->ssl_conn;
+
+    if (session->control_streams_created) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s,
+                      "h3_session_create_control_streams: already created, skipping");
+        return APR_SUCCESS;
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                  "h3_session_create_control_streams: creating control/QPACK streams");
+
     /* Create the 3 required unidirectional streams for HTTP/3:
      * - Control stream
      * - QPACK encoder stream
      * - QPACK decoder stream */
     SSL *control_stream = SSL_new_stream(ssl_conn, SSL_STREAM_FLAG_UNI);
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                  "h3_session_create: created control_stream=%p", (void*)control_stream);
+    if (!control_stream) {
+        unsigned long err = ERR_get_error();
+        char err_buf[256];
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+                      "h3_session_create: SSL_new_stream(control) failed: %s", err_buf);
+    } else {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                      "h3_session_create: created control_stream=%p", (void*)control_stream);
+    }
 
     SSL *qpack_enc_stream = SSL_new_stream(ssl_conn, SSL_STREAM_FLAG_UNI);
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                  "h3_session_create: created qpack_enc_stream=%p", (void*)qpack_enc_stream);
+    if (!qpack_enc_stream) {
+        unsigned long err = ERR_get_error();
+        char err_buf[256];
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+                      "h3_session_create: SSL_new_stream(qpack_enc) failed: %s", err_buf);
+    } else {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                      "h3_session_create: created qpack_enc_stream=%p", (void*)qpack_enc_stream);
+    }
 
     SSL *qpack_dec_stream = SSL_new_stream(ssl_conn, SSL_STREAM_FLAG_UNI);
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                  "h3_session_create: created qpack_dec_stream=%p", (void*)qpack_dec_stream);
+    if (!qpack_dec_stream) {
+        unsigned long err = ERR_get_error();
+        char err_buf[256];
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+                      "h3_session_create: SSL_new_stream(qpack_dec) failed: %s", err_buf);
+    } else {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                      "h3_session_create: created qpack_dec_stream=%p", (void*)qpack_dec_stream);
+    }
 
     if (!control_stream || !qpack_enc_stream || !qpack_dec_stream) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                      "h3_session: failed to create unidirectional streams");
+                      "h3_session: failed to create one or more unidirectional streams (control=%p, qpack_enc=%p, qpack_dec=%p)",
+                      (void*)control_stream, (void*)qpack_enc_stream, (void*)qpack_dec_stream);
         if (control_stream) SSL_free(control_stream);
         if (qpack_enc_stream) SSL_free(qpack_enc_stream);
         if (qpack_dec_stream) SSL_free(qpack_dec_stream);
@@ -483,17 +530,17 @@ apr_status_t h3_session_create(h3_session **psession,
                   (long)control_id, (long)qpack_enc_id, (long)qpack_dec_id);
 
     /* Bind the streams to nghttp3 */
-    rv = nghttp3_conn_bind_control_stream(session->ngh3, control_id);
-    if (rv != 0) {
+    int ngh3_rv = nghttp3_conn_bind_control_stream(session->ngh3, control_id);
+    if (ngh3_rv != 0) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                      "h3_session: nghttp3_conn_bind_control_stream failed: %d", rv);
+                      "h3_session: nghttp3_conn_bind_control_stream failed: %d", ngh3_rv);
         return APR_EGENERAL;
     }
 
-    rv = nghttp3_conn_bind_qpack_streams(session->ngh3, qpack_enc_id, qpack_dec_id);
-    if (rv != 0) {
+    ngh3_rv = nghttp3_conn_bind_qpack_streams(session->ngh3, qpack_enc_id, qpack_dec_id);
+    if (ngh3_rv != 0) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                      "h3_session: nghttp3_conn_bind_qpack_streams failed: %d", rv);
+                      "h3_session: nghttp3_conn_bind_qpack_streams failed: %d", ngh3_rv);
         return APR_EGENERAL;
     }
 
@@ -519,31 +566,68 @@ apr_status_t h3_session_create(h3_session **psession,
     dec_h3s->is_bidi = 0;
     apr_hash_set(session->streams, &dec_h3s->stream_id, sizeof(dec_h3s->stream_id), dec_h3s);
 
+    /* Mark control streams as created */
+    session->control_streams_created = 1;
+
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                  "h3_session: created session for connection %p", (void*)ssl_conn);
+                  "h3_session_create_control_streams: successfully created all control streams");
 
-    /* No thread needed - Apache's MPM is already monitoring the UDP socket! */
-
-    *psession = session;
     return APR_SUCCESS;
 }
 
-apr_status_t h3_session_process(h3_session *session)
+apr_status_t h3_session_process(h3_session *session, h3_stream *specific_stream)
 {
     SSL *stream;
     int processed = 0;
 
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
-                  "h3_session: processing session - START (Apache woke us on UDP socket activity)");
+                  "h3_session: processing session - START (called by thread after SSL_poll), specific_stream=%p",
+                  (void*)specific_stream);
 
-    /* Process any pending QUIC events - reads from UDP socket */
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
-                  "h3_session: calling SSL_handle_events");
-    SSL_handle_events(session->ssl_conn);
-    ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
-                  "h3_session: SSL_handle_events returned");
+    /* Thread already called SSL_handle_events() - don't call it again!
+     * Just accept and process streams that SSL_poll indicated are ready */
 
-    /* Accept and process all available streams */
+    /* If specific_stream is given, read from THAT stream. Otherwise accept NEW streams */
+    if (specific_stream) {
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
+                      "h3_session: reading from specific stream %lu",
+                      (unsigned long)specific_stream->stream_id);
+
+        /* Read data from this specific stream and feed to nghttp3 */
+        unsigned char buffer[8192];
+        size_t bytes_read = 0;
+        int read_ret = SSL_read_ex(specific_stream->ssl_stream, buffer, sizeof(buffer), &bytes_read);
+
+        if (read_ret > 0 && bytes_read > 0) {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
+                          "h3_session: read %zu bytes from stream %lu, feeding to nghttp3",
+                          bytes_read, (unsigned long)specific_stream->stream_id);
+
+            nghttp3_ssize nconsumed = nghttp3_conn_read_stream(
+                session->ngh3, specific_stream->stream_id,
+                buffer, bytes_read, 0);
+
+            if (nconsumed < 0) {
+                ap_log_error(APLOG_MARK, APLOG_ERR, 0, session->s,
+                              "h3_session: nghttp3_conn_read_stream failed: %ld",
+                              (long)nconsumed);
+                return APR_EGENERAL;
+            }
+
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
+                          "h3_session: nghttp3 consumed %ld bytes from stream %lu",
+                          (long)nconsumed, (unsigned long)specific_stream->stream_id);
+        } else {
+            int ssl_error = SSL_get_error(specific_stream->ssl_stream, read_ret);
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
+                          "h3_session: SSL_read_ex returned %d, ssl_error=%d, bytes_read=%zu",
+                          read_ret, ssl_error, bytes_read);
+        }
+
+        return APR_SUCCESS;
+    }
+
+    /* No specific stream - try to accept NEW streams */
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, session->s,
                   "h3_session: attempting to accept more streams");
 

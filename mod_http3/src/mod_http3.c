@@ -24,6 +24,7 @@
  */
 
 #include <string.h>
+#include <errno.h>
 #include <httpd.h>
 
 #include <http_config.h>
@@ -35,6 +36,7 @@
 #include <http_protocol.h>
 #include <http_request.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <util_script.h>
 #ifdef HAVE_UNIX_SUEXEC
     #include <unixd.h>
@@ -47,6 +49,7 @@
 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -79,6 +82,12 @@ typedef struct {
     apr_pool_t *pool;
     server_rec *server;
     apr_hash_t *connections;      /* conn_id -> SSL* (QUIC connections) - parent only */
+    /* Child-specific: background thread for event processing */
+    apr_thread_t *event_thread;
+    volatile int thread_running;
+    int udp_fd;  /* UDP socket fd for thread to monitor */
+    apr_socket_t *wakeup_listen_sock;  /* TCP dummy socket Apache monitors (LISTEN state) */
+    apr_sockaddr_t *wakeup_connect_addr;  /* Address for thread to connect to (wake Apache) */
     /* Note: sessions hash is stored in child_sessions global, not here, due to fork() */
 } h3_quic_listener_t;
 
@@ -99,101 +108,44 @@ typedef struct {
 } h3_quic_conn_state_t;
 
 /* QUIC accept function for MPM integration */
+/* h3_quic_accept - SIMPLE dequeue operation
+ * Thread already did ALL the work (SSL_poll, accept connections, accept streams, read data)
+ * Just return ready request from queue! */
+/* h3_quic_accept - SIMPLE dequeue operation
+ * Thread already did ALL the work (SSL_poll, accept connections, accept streams, read data)
+ * Just return ready request from queue! */
 static apr_status_t h3_quic_accept(void **accepted, ap_listen_rec *lr, apr_pool_t *ptrans)
 {
     h3_quic_listener_t *ql;
-    SSL *conn = NULL;
 
-    /* Use child-specific global (not socket data - that gets overwritten by other children!) */
+    /* Use child-specific global */
     ql = child_quic_listener;
 
     if (!ql || !ql->ssl_listener) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, NULL,
-                     "h3_quic_accept: invalid listener data (child_quic_listener not initialized)");
+                     "h3_quic_accept: invalid listener data");
         return APR_EGENERAL;
     }
 
     *accepted = NULL;
 
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, ql->server,
-                 "h3_quic_accept: CALLED by MPM (active sessions=%d)",
-                 child_sessions ? apr_hash_count(child_sessions) : 0);
-
-    /* MPM called us because UDP socket has activity - process ALL connections */
-    SSL_handle_events(ql->ssl_listener);
-
-    /* First, try to accept new QUIC connections and create sessions for them */
-    conn = SSL_accept_connection(ql->ssl_listener, SSL_ACCEPT_STREAM_NO_BLOCK);
-
-    if (!conn) {
-        int ssl_err = SSL_get_error(ql->ssl_listener, 0);
-        unsigned long ossl_err = ERR_get_error();
-        char err_buf[256];
-        ERR_error_string_n(ossl_err, err_buf, sizeof(err_buf));
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
-                     "h3_quic_accept: SSL_accept_connection returned NULL, ssl_err=%d, ossl_err=%lu: %s",
-                     ssl_err, ossl_err, err_buf);
+    /* Accept and immediately close the dummy connection that woke us up
+     * This drains the wake-up signal so MPM doesn't keep calling us */
+    apr_socket_t *dummy_conn = NULL;
+    apr_status_t accept_rv = apr_socket_accept(&dummy_conn, ql->wakeup_listen_sock, ptrans);
+    if (accept_rv == APR_SUCCESS && dummy_conn) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, ql->server,
+                     "h3_quic_accept: accepted and closing dummy wakeup connection");
+        apr_socket_close(dummy_conn);  /* Immediately close - it was just a wakeup signal */
     }
 
-    if (conn) {
-        const unsigned char *alpn_data = NULL;
-        unsigned int alpn_len = 0;
-        SSL_get0_alpn_selected(conn, &alpn_data, &alpn_len);
-
-        /* Set connection to non-blocking mode */
-        SSL_set_blocking_mode(conn, 0);
-
-        /* CRITICAL: Enable multi-stream mode so we can call SSL_accept_stream()!
-         * Without this, the connection is in single-stream mode where conn itself IS the stream */
-        SSL_set_default_stream_mode(conn, SSL_DEFAULT_STREAM_MODE_NONE);
-
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
-                     "h3_quic_accept: accepted new QUIC connection, ALPN=%.*s",
-                     alpn_len, alpn_data ? (const char*)alpn_data : "(none)");
-
-        /* Create h3_session for this QUIC connection immediately
-         * We use a long-lived pool from the listener for the session */
-        h3_session *session = NULL;
-        apr_status_t rv = h3_session_create(&session, ql->server, ql->ssl_listener, conn, ql->pool);
-        if (rv != APR_SUCCESS) {
-            ap_log_error(APLOG_MARK, APLOG_ERR, rv, ql->server,
-                         "h3_quic_accept: failed to create h3_session");
-            SSL_free(conn);
-            return rv;
-        }
-
-        /* Store session in child_sessions hash */
-        if (!child_sessions) {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, ql->server,
-                         "h3_quic_accept: child_sessions not initialized!");
-            return APR_EGENERAL;
-        }
-
-        apr_uint64_t conn_id = (apr_uint64_t)(uintptr_t)conn;
-        apr_uint64_t *conn_key = apr_pmemdup(ql->pool, &conn_id, sizeof(conn_id));
-        apr_hash_set(child_sessions, conn_key, sizeof(*conn_key), session);
-
-        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
-                     "h3_quic_accept: created and stored h3_session for new QUIC connection");
-
-        /* DON'T return a conn_rec yet - we need to wait for a complete HTTP request
-         * Fall through to session processing below */
-    }
-
-    /* Process all existing sessions and look for complete HTTP requests */
+    /* Check all sessions for ready requests (thread already filled ready_streams queue) */
     if (child_sessions && apr_hash_count(child_sessions) > 0) {
         apr_hash_index_t *hi;
         for (hi = apr_hash_first(ptrans, child_sessions); hi; hi = apr_hash_next(hi)) {
             h3_session *session = apr_hash_this_val(hi);
 
-            /* Process this session - accept streams, send/receive data */
-            apr_status_t rv = h3_session_process(session);
-
-            ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, ql->server,
-                         "h3_quic_accept: processed session %p, rv=%d, ready_streams=%d",
-                         (void*)session, rv, session->ready_streams->nelts);
-
-            /* Check if this session has a complete HTTP request ready */
+            /* Thread already filled ready_streams queue - just check if request is ready */
             if (session->ready_streams->nelts > 0) {
                 /* We have a ready stream! Pop it from the queue */
                 h3_stream **streams = (h3_stream **)session->ready_streams->elts;
@@ -212,16 +164,16 @@ static apr_status_t h3_quic_accept(void **accepted, ap_listen_rec *lr, apr_pool_
 
                 /* Apache is ALREADY monitoring the UDP socket in lr->sd!
                  * Just return that same socket - no need for socketpair/thread! */
-                ap_listen_rec *lr = NULL;
+                ap_listen_rec *listen_rec = NULL;
                 /* Find our listener in ap_listeners */
                 for (ap_listen_rec *l = ap_listeners; l; l = l->next) {
                     if (l->accept_func == h3_quic_accept) {
-                        lr = l;
+                        listen_rec = l;
                         break;
                     }
                 }
 
-                if (!lr || !lr->sd) {
+                if (!listen_rec || !listen_rec->sd) {
                     ap_log_error(APLOG_MARK, APLOG_ERR, 0, ql->server,
                                  "h3_quic_accept: could not find UDP listener socket!");
                     continue;
@@ -230,7 +182,7 @@ static apr_status_t h3_quic_accept(void **accepted, ap_listen_rec *lr, apr_pool_
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
                              "h3_quic_accept: returning UDP socket that Apache is already monitoring");
 
-                apr_socket_t *udp_sock = lr->sd;
+                apr_socket_t *udp_sock = listen_rec->sd;
 
                 /* Create QUIC state for this stream */
                 h3_quic_conn_state_t *qcs = apr_pcalloc(ptrans, sizeof(h3_quic_conn_state_t));
@@ -765,8 +717,9 @@ static int h3_hook_process_connection(conn_rec* c)
                              nvlen, stream->response_len);
             }
 
-            /* Flush the response */
-            h3_session_process(stream->session);
+            /* Thread will flush the response - we just queue it in nghttp3 */
+            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
+                         "h3_hook_process_connection: response queued, thread will send it");
 
             return OK;
         }
@@ -864,12 +817,8 @@ static apr_status_t h3_filter_out(ap_filter_t* f, apr_bucket_brigade* bb)
         if (APR_BUCKET_IS_EOS(b))
         {
             ap_log_cerror(APLOG_MARK, APLOG_TRACE8, 0, f->c, "h3_filter_out APR_BUCKET_IS_EOS");
-            /* Send FIN to properly close the HTTP/3 stream */
-            if (qcs && qcs->ssl_stream) {
-                SSL_stream_conclude(qcs->ssl_stream, 0);
-                ap_log_cerror(APLOG_MARK, APLOG_INFO, 0, f->c,
-                             "h3_filter_out: sent FIN on stream %lu", qcs->stream_id);
-            }
+            /* Don't send FIN here - nghttp3 will send FIN when response is complete
+             * and h3_session will call SSL_stream_conclude() after writing */
         }
         if (AP_BUCKET_IS_ERROR(b))
         {
@@ -1217,6 +1166,340 @@ static apr_status_t h3_filter_in(ap_filter_t* f, apr_bucket_brigade* bb, ap_inpu
     return APR_SUCCESS;
 }
 
+/* Background thread - the COMPLETE QUIC event processor
+ * Does ALL QUIC work: accept connections, create streams, read data, parse HTTP/3
+ * Wakes MPM ONLY when a complete HTTP request is ready */
+static void* APR_THREAD_FUNC quic_event_thread(apr_thread_t *thread, void *data)
+{
+    (void)thread;
+    h3_quic_listener_t *ql = (h3_quic_listener_t*)data;
+    fd_set read_fd, write_fd;
+    struct timeval tv, *tvp;
+    int isinfinite;
+
+    ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                 "quic_event_thread: started in PID %d - COMPLETE QUIC EVENT PROCESSOR",
+                 getpid());
+
+    while (ql->thread_running) {
+        /* wait_for_activity() - select on UDP socket + timeout */
+        FD_ZERO(&read_fd);
+        FD_ZERO(&write_fd);
+
+        if (SSL_net_write_desired(ql->ssl_listener))
+            FD_SET(ql->udp_fd, &write_fd);
+        if (SSL_net_read_desired(ql->ssl_listener))
+            FD_SET(ql->udp_fd, &read_fd);
+        FD_SET(ql->udp_fd, &read_fd); /* Always monitor for read */
+
+        tvp = NULL;
+        if (SSL_get_event_timeout(ql->ssl_listener, &tv, &isinfinite) && !isinfinite) {
+            if (tv.tv_sec != 0 || tv.tv_usec != 0)
+                tvp = &tv;
+        }
+
+        /* Always use a reasonable timeout to avoid hanging forever */
+        struct timeval max_timeout = {1, 0};  /* 1 second */
+        if (!tvp || (tv.tv_sec > 1)) {
+            tvp = &max_timeout;
+        }
+
+        int ret = select(ql->udp_fd + 1, &read_fd, &write_fd, NULL, tvp);
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            ap_log_error(APLOG_MARK, APLOG_ERR, errno, ql->server,
+                         "quic_event_thread: select failed");
+            break;
+        }
+
+        if (ret > 0) {
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                         "quic_event_thread: select returned %d - UDP socket has activity", ret);
+        }
+
+        /* Process internal QUIC events */
+        SSL_handle_events(ql->ssl_listener);
+
+        /* Call SSL_poll ONCE per socket wakeup - NOT in a loop! */
+        int has_ready_request = 0;
+
+        /* Build poll array: listener + all connections + all streams */
+        SSL_POLL_ITEM poll_items[256];
+        int num_items = 0;
+
+            poll_items[num_items].desc = SSL_as_poll_descriptor(ql->ssl_listener);
+            poll_items[num_items].events = UINT64_MAX;
+            poll_items[num_items].revents = 0;
+            num_items++;
+
+            /* Add all sessions - both connections AND streams */
+            if (child_sessions) {
+                apr_hash_index_t *hi;
+                for (hi = apr_hash_first(NULL, child_sessions); hi && num_items < 256; hi = apr_hash_next(hi)) {
+                    h3_session *session = apr_hash_this_val(hi);
+                    if (session && session->ssl_conn) {
+                        /* Add the CONNECTION to poll for IC/OSU/ISB/ISU events */
+                        poll_items[num_items].desc = SSL_as_poll_descriptor(session->ssl_conn);
+
+                        /* Poll for all events, but EXCLUDE OSU if control streams already created
+                         * OSU is level-triggered and stays true forever after handshake completes */
+                        if (session->control_streams_created) {
+                            /* Control streams done - only poll for stream events (ISB/ISU/R/W), not OSU */
+                            poll_items[num_items].events = SSL_POLL_EVENT_ISB | SSL_POLL_EVENT_ISU |
+                                                           SSL_POLL_EVENT_R | SSL_POLL_EVENT_W;
+                        } else {
+                            /* Control streams not created yet - poll for OSU + stream events */
+                            poll_items[num_items].events = UINT64_MAX;
+                        }
+
+                        poll_items[num_items].revents = 0;
+                        num_items++;
+
+                        /* Add ALL streams from this session to the poll array for R/W events */
+                        if (session->streams && num_items < 256) {
+                            apr_hash_index_t *stream_hi;
+                            for (stream_hi = apr_hash_first(NULL, session->streams); stream_hi && num_items < 256; stream_hi = apr_hash_next(stream_hi)) {
+                                h3_stream *h3s = apr_hash_this_val(stream_hi);
+                                if (h3s && h3s->ssl_stream) {
+                                    poll_items[num_items].desc = SSL_as_poll_descriptor(h3s->ssl_stream);
+                                    /* Poll for R (readable) always, W (writable) only if we have data to send */
+                                    poll_items[num_items].events = SSL_POLL_EVENT_R;
+                                    poll_items[num_items].revents = 0;
+                                    num_items++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        static const struct timeval zero_timeout = {0, 0};
+        size_t result_count = 0;
+        int poll_ret = SSL_poll(poll_items, num_items, sizeof(SSL_POLL_ITEM), &zero_timeout,
+                               SSL_POLL_FLAG_NO_HANDLE_EVENTS, &result_count);
+
+        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                     "quic_event_thread: SSL_poll returned %d, result_count=%lu, num_items=%d",
+                     poll_ret, (unsigned long)result_count, num_items);
+
+        /* Process events only if there are any */
+        if (poll_ret && result_count > 0) {
+
+            /* Count events we process to ensure we handle ALL of them */
+            size_t events_processed = 0;
+
+            /* Process ALL events */
+            for (int i = 0; i < num_items; i++) {
+                if (poll_items[i].revents == SSL_POLL_EVENT_NONE)
+                    continue;
+
+                events_processed++;
+
+                ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                             "quic_event_thread: poll_items[%d].revents = 0x%lx (IC=%d OSU=%d ISB=%d ISU=%d R=%d W=%d)",
+                             i, (unsigned long)poll_items[i].revents,
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_IC),
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_OSU),
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_ISB),
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_ISU),
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_R),
+                             !!(poll_items[i].revents & SSL_POLL_EVENT_W));
+
+                /* IC on listener - accept new connection */
+                if (i == 0 && (poll_items[i].revents & SSL_POLL_EVENT_IC)) {
+                    ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                                 "quic_event_thread: IC event - accepting connection");
+                    SSL *conn = SSL_accept_connection(ql->ssl_listener, SSL_ACCEPT_STREAM_NO_BLOCK);
+                    if (conn) {
+                        SSL_set_blocking_mode(conn, 0);
+                        SSL_set_default_stream_mode(conn, SSL_DEFAULT_STREAM_MODE_NONE);
+
+                        h3_session *session = NULL;
+                        apr_status_t rv = h3_session_create(&session, ql->server, ql->ssl_listener, conn, ql->pool);
+                        if (rv == APR_SUCCESS && child_sessions) {
+                            apr_uint64_t conn_id = (apr_uint64_t)(uintptr_t)conn;
+                            apr_uint64_t *conn_key = apr_pmemdup(ql->pool, &conn_id, sizeof(conn_id));
+                            apr_hash_set(child_sessions, conn_key, sizeof(*conn_key), session);
+                        }
+                    }
+                    continue;
+                }
+
+                /* Events on connections or streams (i > 0) */
+                if (i > 0 && child_sessions) {
+                    int handled = 0;
+
+                    /* Check all sessions */
+                    apr_hash_index_t *hi;
+                    for (hi = apr_hash_first(NULL, child_sessions); hi; hi = apr_hash_next(hi)) {
+                        h3_session *session = apr_hash_this_val(hi);
+                        if (!session) continue;
+
+                        /* Is this event on the CONNECTION? */
+                        if (session->ssl_conn == poll_items[i].desc.value.ssl) {
+                            /* OSU - create control streams ONCE */
+                            if ((poll_items[i].revents & SSL_POLL_EVENT_OSU) && !session->control_streams_created) {
+                                h3_session_create_control_streams(session);
+                            }
+
+                            /* Process session ONLY if there are stream events (ISB/ISU/R/W), NOT for OSU alone */
+                            uint64_t stream_events = poll_items[i].revents & (SSL_POLL_EVENT_ISB | SSL_POLL_EVENT_ISU | SSL_POLL_EVENT_R | SSL_POLL_EVENT_W);
+                            if (stream_events) {
+                                h3_session_process(session, NULL);  /* NULL = accept NEW streams */
+                            }
+
+                            /* Check if request is ready */
+                            if (session->ready_streams->nelts > 0) {
+                                has_ready_request = 1;
+                            }
+                            handled = 1;
+                            break;
+                        }
+
+                        /* Is this event on a STREAM? */
+                        if (session->streams && !handled) {
+                            apr_hash_index_t *stream_hi;
+                            for (stream_hi = apr_hash_first(NULL, session->streams); stream_hi; stream_hi = apr_hash_next(stream_hi)) {
+                                h3_stream *h3s = apr_hash_this_val(stream_hi);
+                                if (h3s && h3s->ssl_stream == poll_items[i].desc.value.ssl) {
+                                    /* R/W event on THIS specific stream - read from it! */
+                                    if (poll_items[i].revents & (SSL_POLL_EVENT_R | SSL_POLL_EVENT_W)) {
+                                        h3_session_process(session, h3s);  /* Pass the SPECIFIC stream */
+
+                                        /* Check if request is ready */
+                                        if (session->ready_streams->nelts > 0) {
+                                            has_ready_request = 1;
+                                        }
+                                    }
+                                    handled = 1;
+                                    break;
+                                }
+                            }
+                            if (handled) break;
+                        }
+                    }
+                }
+            }
+
+            /* Verify we processed ALL events that SSL_poll reported */
+            if (events_processed != result_count) {
+                ap_log_error(APLOG_MARK, APLOG_ERR, 0, ql->server,
+                             "quic_event_thread: BUG - SSL_poll reported %lu events but we only processed %lu - ABORTING",
+                             (unsigned long)result_count, (unsigned long)events_processed);
+                abort();
+            }
+        } /* end if (poll_ret && result_count > 0) */
+
+        /* Flush nghttp3 output - send any queued response data */
+        if (child_sessions && apr_hash_count(child_sessions) > 0) {
+            apr_hash_index_t *flush_hi;
+            for (flush_hi = apr_hash_first(NULL, child_sessions); flush_hi; flush_hi = apr_hash_next(flush_hi)) {
+                h3_session *flush_session = apr_hash_this_val(flush_hi);
+                if (!flush_session || !flush_session->ngh3) continue;
+
+                /* Ask nghttp3 which streams have data to send */
+                for (;;) {
+                    nghttp3_vec vec[16];
+                    nghttp3_ssize nvec;
+                    int64_t stream_id;
+                    int fin = 0;
+
+                    /* nghttp3 tells US which stream has data */
+                    nvec = nghttp3_conn_writev_stream(flush_session->ngh3, &stream_id,
+                                                      &fin, vec, 16);
+                    if (nvec == 0) {
+                        /* No more data to send */
+                        break;
+                    }
+                    if (nvec < 0) {
+                        ap_log_error(APLOG_MARK, APLOG_ERR, 0, ql->server,
+                                     "quic_event_thread: nghttp3_conn_writev_stream failed: %ld", (long)nvec);
+                        break;
+                    }
+
+                    /* Find the h3_stream for this stream_id */
+                    h3_stream *h3s = apr_hash_get(flush_session->streams, &stream_id, sizeof(stream_id));
+                    if (!h3s || !h3s->ssl_stream) {
+                        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, ql->server,
+                                     "quic_event_thread: stream %ld not found in hash", (long)stream_id);
+                        continue;
+                    }
+
+                    /* Send all vectors */
+                    size_t total_written = 0;
+                    for (nghttp3_ssize i = 0; i < nvec; i++) {
+                        size_t written = 0;
+                        int write_ret = SSL_write_ex(h3s->ssl_stream, vec[i].base, vec[i].len, &written);
+                        if (write_ret > 0) {
+                            total_written += written;
+                        } else {
+                            int ssl_err = SSL_get_error(h3s->ssl_stream, write_ret);
+                            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, ql->server,
+                                         "quic_event_thread: SSL_write_ex failed on stream %ld: ssl_err=%d",
+                                         (long)stream_id, ssl_err);
+                            break;
+                        }
+                    }
+
+                    if (total_written > 0) {
+                        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                                     "quic_event_thread: wrote %zu bytes to stream %ld (%ld vectors, fin=%d)",
+                                     total_written, (long)stream_id, (long)nvec, fin);
+
+                        /* Tell nghttp3 we consumed the data */
+                        int consumed = nghttp3_conn_add_write_offset(flush_session->ngh3, stream_id, total_written);
+                        if (consumed != 0) {
+                            ap_log_error(APLOG_MARK, APLOG_WARNING, 0, ql->server,
+                                         "quic_event_thread: nghttp3_conn_add_write_offset failed: %d", consumed);
+                        }
+                    }
+
+                    /* If fin, close the stream write side */
+                    if (fin) {
+                        SSL_stream_conclude(h3s->ssl_stream, 0);
+                        ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                                     "quic_event_thread: closed write side of stream %ld (FIN)",
+                                     (long)stream_id);
+                    }
+                }
+            }
+        }
+
+        /* Wake MPM ONLY if we have a ready request */
+        if (has_ready_request) {
+            /* Connect to dummy socket to wake Apache - MPM will call h3_quic_accept */
+            int wake_sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+            if (wake_sock >= 0) {
+                struct sockaddr_in wake_addr;
+                memset(&wake_addr, 0, sizeof(wake_addr));
+                wake_addr.sin_family = AF_INET;
+                wake_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                wake_addr.sin_port = htons(ql->wakeup_connect_addr->port);
+
+                /* Non-blocking connect - we don't care if it succeeds or EINPROGRESS */
+                int conn_ret = connect(wake_sock, (struct sockaddr*)&wake_addr, sizeof(wake_addr));
+                if (conn_ret == 0 || errno == EINPROGRESS) {
+                    ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                                 "quic_event_thread: REQUEST READY - connected to dummy socket port %d",
+                                 ql->wakeup_connect_addr->port);
+                } else {
+                    ap_log_error(APLOG_MARK, APLOG_WARNING, errno, ql->server,
+                                 "quic_event_thread: failed to connect to dummy socket");
+                }
+                /* Don't close yet - keep connection alive so MPM sees it */
+                /* Socket will be cleaned up by h3_quic_accept */
+            } else {
+                ap_log_error(APLOG_MARK, APLOG_ERR, errno, ql->server,
+                             "quic_event_thread: failed to create wakeup socket");
+            }
+        }
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_INFO, 0, ql->server,
+                 "quic_event_thread: exiting in PID %d", getpid());
+    return NULL;
+}
+
 /* Child initialization: create per-child QUIC listener */
 static void h3_child_init(apr_pool_t* pchild, server_rec* s)
 {
@@ -1277,19 +1560,6 @@ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
         return;
     }
 
-    /* Find the h3 listener registered by parent */
-    for (lr = ap_listeners; lr; lr = lr->next) {
-        if (lr->protocol && strcmp(lr->protocol, "h3") == 0) {
-            break;
-        }
-    }
-
-    if (!lr) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                     "h3_child_init: Could not find h3 listener!");
-        return;
-    }
-
     /* Create this child's own UDP socket with SO_REUSEPORT */
     rv = apr_socket_create(&udp_sock, APR_INET6, SOCK_DGRAM, APR_PROTO_UDP, pchild);
     if (rv != APR_SUCCESS) {
@@ -1330,11 +1600,19 @@ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
                  "h3_child_init: PID %d created SO_REUSEPORT socket fd=%d on port %d",
                  getpid(), fd, conf->host_port);
 
-    /* Update listener to use this child's socket */
-    lr->sd = udp_sock;
+    /* Update ALL h3 listeners to use this child's socket (includes duplicated ones) */
+    int updated_count = 0;
+    for (lr = ap_listeners; lr; lr = lr->next) {
+        if (lr->protocol && strcmp(lr->protocol, "h3") == 0) {
+            lr->sd = udp_sock;
+            updated_count++;
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                         "h3_child_init: updated h3 listener %p to use UDP socket", (void*)lr);
+        }
+    }
 
     ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                 "h3_child_init: updated lr->sd=%p for this child", (void*)lr->sd);
+                 "h3_child_init: updated %d h3 listener(s) in ap_listeners", updated_count);
 
     /* Create QUIC listener data */
     ql = apr_pcalloc(pchild, sizeof(*ql));
@@ -1401,6 +1679,11 @@ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
 
     SSL_set_bio(ql->ssl_listener, bio, bio);
 
+    /* Verify BIO fd matches our socket fd */
+    int bio_fd = BIO_get_fd(bio, NULL);
+    ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+                 "h3_child_init: BIO fd=%d, socket fd=%d", bio_fd, fd);
+
     /* Start listening */
     if (!SSL_listen(ql->ssl_listener)) {
         ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
@@ -1424,9 +1707,115 @@ static void h3_child_init(apr_pool_t* pchild, server_rec* s)
     /* Store in child-specific global (can't use socket data - gets overwritten by other children!) */
     child_quic_listener = ql;
 
+    /* Store UDP fd for thread */
+    ql->udp_fd = fd;
+
+    /* Create TCP dummy socket on localhost for wakeup
+     * Thread will connect() to this to wake Apache MPM */
+    apr_socket_t *dummy_sock;
+    apr_sockaddr_t *dummy_addr;
+
+    /* Create TCP socket on 127.0.0.1:0 (random port) */
+    rv = apr_sockaddr_info_get(&dummy_addr, "127.0.0.1", APR_INET, 0, 0, pchild);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to get dummy sockaddr");
+        SSL_free(ql->ssl_listener);
+        SSL_CTX_free(ql->ssl_ctx);
+        apr_socket_close(udp_sock);
+        return;
+    }
+
+    rv = apr_socket_create(&dummy_sock, APR_INET, SOCK_STREAM, APR_PROTO_TCP, pchild);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to create dummy TCP socket");
+        SSL_free(ql->ssl_listener);
+        SSL_CTX_free(ql->ssl_ctx);
+        apr_socket_close(udp_sock);
+        return;
+    }
+
+    /* Make it reusable and non-blocking */
+    apr_socket_opt_set(dummy_sock, APR_SO_REUSEADDR, 1);
+    apr_socket_opt_set(dummy_sock, APR_SO_NONBLOCK, 1);
+
+    /* Bind to random port */
+    rv = apr_socket_bind(dummy_sock, dummy_addr);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to bind dummy socket");
+        apr_socket_close(dummy_sock);
+        SSL_free(ql->ssl_listener);
+        SSL_CTX_free(ql->ssl_ctx);
+        apr_socket_close(udp_sock);
+        return;
+    }
+
+    /* Put in LISTEN state - this is what MPM expects! */
+    rv = apr_socket_listen(dummy_sock, 128);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to listen on dummy socket");
+        apr_socket_close(dummy_sock);
+        SSL_free(ql->ssl_listener);
+        SSL_CTX_free(ql->ssl_ctx);
+        apr_socket_close(udp_sock);
+        return;
+    }
+
+    /* Get the actual bound address (with assigned port) */
+    apr_sockaddr_t *actual_addr;
+    rv = apr_socket_addr_get(&actual_addr, APR_LOCAL, dummy_sock);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to get dummy socket address");
+        apr_socket_close(dummy_sock);
+        SSL_free(ql->ssl_listener);
+        SSL_CTX_free(ql->ssl_ctx);
+        apr_socket_close(udp_sock);
+        return;
+    }
+
+    /* Store for thread to connect to */
+    ql->wakeup_listen_sock = dummy_sock;
+    ql->wakeup_connect_addr = actual_addr;
+
     ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                 "h3_child_init: OpenSSL QUIC attached to inherited socket on port %d",
-                 conf->host_port);
+                 "h3_child_init: created dummy TCP socket listening on 127.0.0.1:%d",
+                 actual_addr->port);
+
+    /* Update h3 listeners to use DUMMY SOCKET for wakeup
+     * Apache MPM will monitor this LISTEN socket and call h3_quic_accept on connection */
+    updated_count = 0;
+    for (lr = ap_listeners; lr; lr = lr->next) {
+        if (lr->protocol && strcmp(lr->protocol, "h3") == 0) {
+            lr->sd = dummy_sock;  /* Apache monitors dummy TCP socket in LISTEN state! */
+            updated_count++;
+            ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                         "h3_child_init: updated h3 listener to use dummy TCP socket port %d",
+                         actual_addr->port);
+        }
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                 "h3_child_init: configured %d h3 listeners with dummy socket", updated_count);
+
+    /* Start background thread to process QUIC events */
+    ql->thread_running = 1;
+    apr_threadattr_t *thread_attr;
+    apr_threadattr_create(&thread_attr, pchild);
+    rv = apr_thread_create(&ql->event_thread, thread_attr, quic_event_thread, ql, pchild);
+    if (rv != APR_SUCCESS) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                     "h3_child_init: Failed to create QUIC event thread");
+        ql->thread_running = 0;
+        return;
+    }
+
+    ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
+                 "h3_child_init: Started QUIC thread in PID %d, UDP socket in pollset",
+                 getpid());
 }
 static void h3_c1_child_stopping(apr_pool_t* /*pool*/, int graceful)
 {

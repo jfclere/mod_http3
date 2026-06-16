@@ -85,8 +85,10 @@ apr_status_t h3_session_create_REMOVED(h3_session **psession,
                                 SSL *ssl_conn,
                                 apr_pool_t *pool);
 
-/* Process the session - handle all streams */
-apr_status_t h3_session_process(h3_session *session);
+/* Process the session - handle all streams
+ * If specific_stream is NULL: try to accept NEW streams with SSL_accept_stream()
+ * If specific_stream is NOT NULL: read from that specific stream */
+apr_status_t h3_session_process(h3_session *session, h3_stream *specific_stream);
 
 /* Destroy session */
 void h3_session_destroy(h3_session *session);
