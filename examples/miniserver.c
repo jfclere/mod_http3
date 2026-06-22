@@ -42,11 +42,11 @@ int listenServer()
 {
     //Setup a socket to listen on the address for incoming requests
 
-    apr_socket_t* listenSocket;
-    apr_pool_t* memPool;
-    apr_status_t retStatus;
-    apr_threadattr_t* thd_attr;
-    apr_sockaddr_t* sa;
+    apr_socket_t* listenSocket = NULL;
+    apr_pool_t* memPool = NULL;
+    apr_status_t retStatus = APR_SUCCESS;
+    apr_threadattr_t* thd_attr = NULL;
+    apr_sockaddr_t* sa = NULL;
 
     apr_pool_create(&memPool, NULL);
     apr_threadattr_create(&thd_attr, memPool);
@@ -78,10 +78,10 @@ int listenServer()
     while (1)
     {
 
-        apr_sockaddr_t* from;
-        char buf[1024];
-        char* ip_addr;
-        apr_port_t fromport;
+        apr_sockaddr_t* from = NULL;
+        char buf[1024] = {0};
+        char* ip_addr = NULL;
+        apr_port_t fromport = 0;
         apr_size_t len = sizeof(buf);
 
         // Create the from from some "random values".
@@ -99,7 +99,7 @@ int listenServer()
         printf("from: %.*s\n", (int)len, buf);
 
         //Create the new thread
-        apr_thread_t* thd_obj;
+        apr_thread_t* thd_obj = NULL;
         apr_socket_t* ns = NULL;
         retStatus = apr_thread_create(&thd_obj, NULL, processConnection, ns, memPool);
 
@@ -131,7 +131,7 @@ static void* APR_THREAD_FUNC processConnection(apr_thread_t* /*thd*/, void* data
 
     while (1)
     {
-        char buf[BUFSIZE];
+        char buf[BUFSIZE] = {0};
         apr_size_t len = sizeof(buf) - 1; /* -1 for a null-terminated */
 
         apr_status_t rv = apr_socket_recv(sock, buf, &len);

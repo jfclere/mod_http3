@@ -474,7 +474,7 @@ static void send_all_stream(nghttp3_conn* conn)
 
 static int test_quic_client(char* hostname, short port, char* sport, int num_streams)
 {
-    int testresult = 0, ret;
+    int testresult = 0, ret = 0;
     int c_fd = -1;
     BIO* c_net_bio = NULL;
     BIO* c_net_bio_own = NULL;
@@ -485,22 +485,22 @@ static int test_quic_client(char* hostname, short port, char* sport, int num_str
     int c_connected = 0, c_write_done = 0, c_shutdown = 0, c_streamopened = 0;
     SSL** d_ssl = NULL;
     int stream_idx = 0;
-    apr_time_t start_time;
+    apr_time_t start_time = 0;
     /* unsigned char alpn[] = { 8, 'h', 't', 't', 'p', '/', '0', '.', '9' }; lol */
     unsigned char alpn[] = {5, 'h', '3', '-', '2', '9', 2, 'h', '3'};
 
-    struct hostent* hp;
+    struct hostent* hp = NULL;
 
     /* try to use nghttp3 to build a get request */
-    nghttp3_conn* conn;
-    nghttp3_settings settings;
+    nghttp3_conn* conn = NULL;
+    nghttp3_settings settings = {0};
     nghttp3_callbacks callbacks = {0};
     // userdata ud;
-    char ud[10];
+    char ud[10] = {0};
     const nghttp3_mem* mem = nghttp3_mem_default();
 
-    char authority[128];
-    nghttp3_nv nva[16];
+    char authority[128] = {0};
+    nghttp3_nv nva[16] = {0};
     size_t num_nv = 0;
 
     strcpy(authority, hostname);
@@ -808,7 +808,7 @@ err:
 
 int main(int argc, char** argv)
 {
-    short port;
+    short port = 0;
     int num_streams = 1; /* Default to 1 stream */
 
     if (argc < 3 || argc > 4)

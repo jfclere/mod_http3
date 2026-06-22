@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.16)
+project(mod_http3 VERSION 0.0.17)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
   message(FATAL_ERROR "Unsupported compiler ${CMAKE_C_COMPILER_ID}. Only GCC is supported for now.")
 endif()
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+  set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif()
 
 # -- CMake configuration --

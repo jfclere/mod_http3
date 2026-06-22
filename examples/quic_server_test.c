@@ -411,14 +411,14 @@ static nghttp3_ssize step_read_data(nghttp3_conn* /*conn*/, int64_t /*stream_id*
 
 static void* process_server(void* par)
 {
-    int64_t streamid;
+    int64_t streamid = -1;
     size_t numbytes = 0;
     QUIC_TSERVER* qtserv = (QUIC_TSERVER*)par;
 
     /* try to use nghttp3 to send a response */
-    nghttp3_conn* conn;
-    nghttp3_settings settings;
-    struct h3ssl h3ssl;
+    nghttp3_conn* conn = NULL;
+    nghttp3_settings settings = {0};
+    struct h3ssl h3ssl = {0};
 
     const nghttp3_mem* mem = nghttp3_mem_default();
     init_id(&h3ssl);
@@ -570,10 +570,10 @@ int main(int argc, char* argv[])
     int ipv6 = 0, trace = 0;
     int argnext = 1;
     BIO* bio = NULL;
-    char *hostname, *port, *certfile, *keyfile;
+    char *hostname = NULL, *port = NULL, *certfile = NULL, *keyfile = NULL;
     int ret = EXIT_FAILURE;
     unsigned char alpn[] = {5, 'h', '3', '-', '2', '9', 2, 'h', '3'};
-    pthread_t thread[2];
+    pthread_t thread[2] = {0};
 
     bio_err = BIO_new_fp(stderr, BIO_NOCLOSE | BIO_FP_TEXT);
     if (argc == 0 || bio_err == NULL)

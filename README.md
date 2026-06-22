@@ -75,10 +75,13 @@ Listen 4433 https
     SSLCertificateFile    conf/server.crt
     SSLCertificateKeyFile conf/server.key
 
-    H3CertificatePath    conf/server.crt
-    H3CertificateKeyPath conf/server.key
+    Header always set Alt-Svc "h3=\":8443\"; ma=60; persist=1"
+    Protocols h3
 
-    Header always set Alt-Svc "h3=\":4433\"; ma=60; persist=1"
+    H3CertificatePath       /src/dependencies/httpd-dist/conf/certs/server.crt
+    H3CertificateKeyPath    /src/dependencies/httpd-dist/conf/certs/server.key
+
+    H3Port                  8443
 
     DocumentRoot htdocs
     <Directory htdocs>

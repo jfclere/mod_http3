@@ -30,6 +30,6 @@
 	path = dependencies/openssl
 	url = https://github.com/openssl/openssl.git
 	shallow = true
-	ignore = none
+	ignore = dirty
 	update = checkout
 	branch = openssl-3.5

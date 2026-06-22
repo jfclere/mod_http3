@@ -35,8 +35,8 @@ function(apply_target_flags target)
   endif()
 
   # -- Compile flags --
-  set(FLAGS_DEBUG "-g3")
-  set(FLAGS_RELEASE "-O3")
+  set(FLAGS_DEBUG "-g3;-O0")
+  set(FLAGS_RELEASE "-g;-O3")
 
   # -- Warning flags --
   set(_WARNINGS

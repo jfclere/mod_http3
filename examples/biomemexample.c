@@ -94,8 +94,8 @@ int client(int fdread, int fdwrite)
     BIO* client_r = BIO_new(BIO_s_mem());
     BIO* client_w = BIO_new(BIO_s_mem());
 
-    SSL* ssl_client;
-    SSL_CTX* ctx_client;
+    SSL* ssl_client = NULL;
+    SSL_CTX* ctx_client = NULL;
 
     init_OpenSSL();
 
@@ -107,8 +107,8 @@ int client(int fdread, int fdwrite)
     SSL_set_connect_state(ssl_client);
 
     bool fin_client = false;
-    char buf[4096];
-    int n;
+    char buf[4096] = {0};
+    int n = 0;
     int error = SSL_ERROR_NONE;
     while (!fin_client)
     {
@@ -201,8 +201,8 @@ int server(int fdread, int fdwrite)
     BIO* srv_r = BIO_new(BIO_s_mem());
     BIO* srv_w = BIO_new(BIO_s_mem());
 
-    SSL* ssl_srv;
-    SSL_CTX* ctx_srv;
+    SSL* ssl_srv = NULL;
+    SSL_CTX* ctx_srv = NULL;
 
     init_OpenSSL();
 
@@ -217,8 +217,8 @@ int server(int fdread, int fdwrite)
     SSL_set_accept_state(ssl_srv);
 
     bool fin_srv = false;
-    char buf[4096];
-    int n;
+    char buf[4096] = {0};
+    int n = 0;
     int error = SSL_ERROR_NONE;
     while (!fin_srv)
     {
@@ -325,8 +325,8 @@ int server(int fdread, int fdwrite)
 }
 int main()
 {
-    int fd[2], df[2];
-    pid_t childpid;
+    int fd[2] = {0}, df[2] = {0};
+    pid_t childpid = -1;
 
     if (pipe(fd) == -1)
     {

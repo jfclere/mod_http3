@@ -3,6 +3,34 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.17 (2026-06-22)
+--------------------
+  *) Split the listener and QUIC engine into h3_io, the per-connection
+     state into h3_session, and the per-stream helpers into h3_stream.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Replaced the MPM integrations with instead managing our own
+     portable raw UDP socket into h3_socket.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added the CHECK macro for invariant and runtime-error checking.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Fixed segfaults from double-free's of QUIC stream SSLs
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added a H3Port directive to httpd.conf.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added doxygen comments to all headers.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Made Debug the default CMake build type.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Bumped OpenSSL submodule for upstream QUIC engine fixes.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.16 (2026-06-12)
 --------------------
   *) Split large monolithic files into h3_*.c/h units and renamed

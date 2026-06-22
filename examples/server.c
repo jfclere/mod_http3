@@ -286,8 +286,8 @@ static int on_end_stream(nghttp3_conn* /*h3conn*/, int64_t /*stream_id*/, void* 
 /* Read from the stream and push to the h3conn */
 static int quic_server_read(nghttp3_conn* h3conn, SSL* stream, uint64_t id, struct h3ssl* h3ssl)
 {
-    int ret, r;
-    uint8_t msg2[16000];
+    int ret = 0, r = 0;
+    uint8_t msg2[16000] = {0};
     size_t l = sizeof(msg2);
 
     if (!SSL_has_pending(stream))
@@ -339,10 +339,10 @@ static int quic_server_read(nghttp3_conn* h3conn, SSL* stream, uint64_t id, stru
  */
 static int quic_server_h3streams(nghttp3_conn* h3conn, struct h3ssl* h3ssl)
 {
-    SSL* rstream;
-    SSL* pstream;
-    SSL* cstream;
-    uint64_t r_streamid, p_streamid, c_streamid;
+    SSL* rstream = NULL;
+    SSL* pstream = NULL;
+    SSL* cstream = NULL;
+    uint64_t r_streamid = UINT64_MAX, p_streamid = UINT64_MAX, c_streamid = UINT64_MAX;
     struct ssl_id* ssl_ids = h3ssl->ssl_ids;
 
     rstream = SSL_new_stream(ssl_ids[0].s, SSL_STREAM_FLAG_UNI);
@@ -405,12 +405,12 @@ static int quic_server_h3streams(nghttp3_conn* h3conn, struct h3ssl* h3ssl)
 /* Try to read from the streams we have */
 static int read_from_ssl_ids(nghttp3_conn* h3conn, struct h3ssl* h3ssl)
 {
-    int hassomething = 0, i;
+    int hassomething = 0, i = 0;
     struct ssl_id* ssl_ids = h3ssl->ssl_ids;
     SSL_POLL_ITEM items[MAXSSL_IDS] = {0}, *item = items;
     static const struct timeval nz_timeout = {0, 0};
     size_t result_count = SIZE_MAX;
-    int numitem = 0, ret;
+    int numitem = 0, ret = 0;
     uint64_t processed_event = 0;
 
     /*
@@ -1001,18 +1001,18 @@ static int run_quic_server(SSL_CTX* ctx, int fd)
 
     for (;;)
     {
-        nghttp3_conn* h3conn;
-        nghttp3_settings settings;
+        nghttp3_conn* h3conn = NULL;
+        nghttp3_settings settings = {0};
         nghttp3_callbacks callbacks = {0};
-        struct h3ssl h3ssl;
+        struct h3ssl h3ssl = {0};
         const nghttp3_mem* mem = nghttp3_mem_default();
-        nghttp3_nv resp[10];
-        size_t num_nv;
-        nghttp3_data_reader dr;
-        int numtimeout;
-        char slength[11];
-        size_t written, total_written, total_len;
-        nghttp3_ssize sveccnt;
+        nghttp3_nv resp[10] = {0};
+        size_t num_nv = 0;
+        nghttp3_data_reader dr = {0};
+        int numtimeout = 0;
+        char slength[11] = {0};
+        size_t written = 0, total_written = 0, total_len = 0;
+        nghttp3_ssize sveccnt = 0;
         nghttp3_vec vec[256] = {0};
         int num_nothing = 0;
 
@@ -1514,7 +1514,7 @@ int main(int argc, char** argv)
     int rc = 1;
     SSL_CTX* ctx = NULL;
     int fd = -1;
-    unsigned long port;
+    unsigned long port = 0;
 
     if (argc < 4)
     {
