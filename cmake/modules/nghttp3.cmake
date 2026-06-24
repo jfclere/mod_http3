@@ -7,11 +7,9 @@ endif()
 set(NGHTTP3_VERSION_MIN "1.15.90")
 
 if(WITH_NGHTTP3)
-  find_package(nghttp3 QUIET PATHS
-    "${WITH_NGHTTP3}/lib/cmake/nghttp3"
-    "${WITH_NGHTTP3}/lib64/cmake/nghttp3"
-    NO_DEFAULT_PATH)
-  if(NOT nghttp3_FOUND)
+  find_library(NGHTTP3_LIBRARY NAMES nghttp3
+    PATHS "${WITH_NGHTTP3}/lib" "${WITH_NGHTTP3}/lib64" NO_DEFAULT_PATH)
+  if(NOT NGHTTP3_LIBRARY)
     message(FATAL_ERROR
         "[nghttp3] error: nghttp3 not found at WITH_NGHTTP3=${WITH_NGHTTP3}."
     )
@@ -28,25 +26,35 @@ else()
     require_initialized_submodule("${NGHTTP3_DIRECTORY}/lib/sfparse")
     file(MAKE_DIRECTORY "${NGHTTP3_OUTPUT_DIRECTORY}/logs")
 
-    if(EXISTS "${NGHTTP3_DIRECTORY}/CMakeCache.txt")
+    if(EXISTS "${NGHTTP3_DIRECTORY}/Makefile")
+
       message(STATUS "[nghttp3] Cleaning previous build artifacts")
-      file(REMOVE "${NGHTTP3_DIRECTORY}/CMakeCache.txt")
+
+      execute_process(
+        COMMAND make distclean
+        WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
+        RESULT_VARIABLE _NGHTTP3_DISTCLEAN_RESULT
+        OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log"
+        ERROR_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log")
+      if(NOT _NGHTTP3_DISTCLEAN_RESULT EQUAL 0)
+        message(FATAL_ERROR "[nghttp3] error: distclean failed -- see ${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log")
+      endif()
     endif()
 
     message(STATUS "[nghttp3] Configuring -> ${NGHTTP3_OUTPUT_DIRECTORY}")
 
     execute_process(
-      COMMAND cmake -B .
-        -DENABLE_DEBUG=OFF
-        -DENABLE_WERROR=OFF
-        -DENABLE_ASAN=OFF
-        -DENABLE_LIB_ONLY=ON
-        -DENABLE_STATIC_LIB=ON
-        -DENABLE_SHARED_LIB=ON
-        -DENABLE_STATIC_CRT=OFF
-        -DBUILD_TESTING=OFF
-        -DCMAKE_INSTALL_PREFIX=${NGHTTP3_OUTPUT_DIRECTORY}
-        --fresh
+      COMMAND autoreconf -i
+      WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
+      RESULT_VARIABLE _NGHTTP3_AUTORECONF_RESULT
+      OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-autoreconf.log"
+      ERROR_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-autoreconf.log")
+    if(NOT _NGHTTP3_AUTORECONF_RESULT EQUAL 0)
+      message(FATAL_ERROR "[nghttp3] error: autoreconf failed -- see ${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-autoreconf.log")
+    endif()
+
+    execute_process(
+      COMMAND ./configure --prefix=${NGHTTP3_OUTPUT_DIRECTORY} --enable-lib-only --enable-debug
       WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
       RESULT_VARIABLE _NGHTTP3_CONFIGURE_RESULT
       OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-configure.log"
@@ -58,7 +66,7 @@ else()
     message(STATUS "[nghttp3] Building (${DEPENDENCIES_PARALLEL} jobs)")
 
     execute_process(
-      COMMAND cmake --build . -j${DEPENDENCIES_PARALLEL} --clean-first
+      COMMAND make -j${DEPENDENCIES_PARALLEL}
       WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
       RESULT_VARIABLE _NGHTTP3_BUILD_RESULT
       OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-build.log"
@@ -70,7 +78,7 @@ else()
     message(STATUS "[nghttp3] Installing to ${NGHTTP3_OUTPUT_DIRECTORY}")
 
     execute_process(
-      COMMAND cmake --install .
+      COMMAND make install
       WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
       RESULT_VARIABLE _NGHTTP3_INSTALL_RESULT
       OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-install.log"
@@ -84,28 +92,35 @@ else()
   endif()
 
   # Find the nghttp3 we just built
-
-  find_package(nghttp3 REQUIRED PATHS
-    "${NGHTTP3_OUTPUT_DIRECTORY}/lib/cmake/nghttp3"
-    "${NGHTTP3_OUTPUT_DIRECTORY}/lib64/cmake/nghttp3"
-    NO_DEFAULT_PATH)
+  find_library(NGHTTP3_LIBRARY NAMES nghttp3 PATHS "${NGHTTP3_OUTPUT_DIRECTORY}/lib" NO_DEFAULT_PATH)
 endif()
 
 # Verify version is >= NGHTTP3_VERSION_MIN
-if(nghttp3_VERSION VERSION_LESS NGHTTP3_VERSION_MIN)
+file(READ "${NGHTTP3_OUTPUT_DIRECTORY}/include/nghttp3/version.h" _NGHTTP3_VERSION_H_CONTENT)
+string(REGEX MATCH "#define NGHTTP3_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)" _ "${_NGHTTP3_VERSION_H_CONTENT}")
+set(NGHTTP3_VERSION "${CMAKE_MATCH_1}")
+
+if(NOT NGHTTP3_VERSION OR NGHTTP3_VERSION VERSION_LESS NGHTTP3_VERSION_MIN)
   message(FATAL_ERROR
-      "[nghttp3] error: found version ${nghttp3_VERSION} but require >= ${NGHTTP3_VERSION_MIN}."
-  )
+    "[nghttp3] error: could not determine a valid version\n"
+    "  NGHTTP3_INCLUDE_DIR = ${NGHTTP3_INCLUDE_DIR}\n"
+    "  NGHTTP3_VERSION     = ${NGHTTP3_VERSION}\n"
+    "  NGHTTP3_VERSION_MIN = ${NGHTTP3_VERSION_MIN}")
 endif()
 
-message(STATUS "[nghttp3] found (${nghttp3_VERSION}): ${NGHTTP3_OUTPUT_DIRECTORY}")
+message(STATUS "[nghttp3] found (${NGHTTP3_VERSION}): ${NGHTTP3_OUTPUT_DIRECTORY}")
 
 add_library(nghttp3 INTERFACE)
-target_link_libraries(nghttp3 INTERFACE nghttp3::nghttp3)
+target_include_directories(nghttp3 SYSTEM INTERFACE "${NGHTTP3_OUTPUT_DIRECTORY}/include")
+target_link_libraries(nghttp3 INTERFACE "${NGHTTP3_LIBRARY}")
 
 # Extras
 
-if(TARGET nghttp3::nghttp3_static)
+find_library(NGHTTP3_STATIC_LIBRARY NAMES libnghttp3.a
+  PATHS "${NGHTTP3_OUTPUT_DIRECTORY}/lib" NO_DEFAULT_PATH NO_CACHE)
+
+if(NGHTTP3_STATIC_LIBRARY)
   add_library(nghttp3_static INTERFACE)
-  target_link_libraries(nghttp3_static INTERFACE nghttp3::nghttp3_static)
+  target_include_directories(nghttp3_static SYSTEM INTERFACE "${NGHTTP3_OUTPUT_DIRECTORY}/include")
+  target_link_libraries(nghttp3_static INTERFACE "${NGHTTP3_STATIC_LIBRARY}")
 endif()
