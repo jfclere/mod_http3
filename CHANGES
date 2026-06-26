@@ -3,6 +3,11 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.19 (2026-06-25)
+--------------------
+  *) Added 13 tests under test/http3/
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.18 (2026-06-24)
 --------------------
   *) Fixed WITH_NGHTTP3 to work with both cmake --install and

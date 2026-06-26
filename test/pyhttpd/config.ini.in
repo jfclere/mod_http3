@@ -1,27 +1,35 @@
 [global]
-curl_bin = /opt/curl/bin/curl
+curl_bin = @CURL_BIN@
+nghttp = nghttp
+h2load = h2load
+
+prefix = @HTTPD_PREFIX@
+exec_prefix = @HTTPD_PREFIX@
+bindir = @HTTPD_PREFIX@/bin
+sbindir = @HTTPD_PREFIX@/bin
+libdir = @HTTPD_PREFIX@/lib
+libexecdir = @LIBEXECDIR@
+
+apr_bindir = @APR_BINDIR@
+apxs = @HTTPD_PREFIX@/bin/apxs
+apachectl = @HTTPD_PREFIX@/bin/apachectl
 
 [httpd]
-httpd = @HTTPD_OUTPUT_DIRECTORY@/bin/httpd
-apxs = @HTTPD_OUTPUT_DIRECTORY@/bin/apxs
-libexec_dir = @HTTPD_OUTPUT_DIRECTORY@/modules
-
-[openssl]
-prefix = @OPENSSL_OUTPUT_DIRECTORY@
-
-[apr]
-prefix = @APR_OUTPUT_DIRECTORY@
-
-[apu]
-prefix = @APU_OUTPUT_DIRECTORY@
+version = @HTTPD_VERSION@
+name = @HTTPD_NAME@
+dso_modules = @DSO_MODULES@
+mpm_modules = @MPM_MODULES@
 
 [test]
-src_dir = @CMAKE_SOURCE_DIR@
 gen_dir = @CMAKE_BINARY_DIR@/test/gen
-build_dir = @CMAKE_BINARY_DIR@
-mod_http3 = @CMAKE_BINARY_DIR@/lib/mod_http3.so
-https_port = 6643
 http_port = 6644
+https_port = 6643
+proxy_port = 6645
+http_port2 = 6646
+ws_port = 6680
 http_tld = tests.httpd.apache.org
 test_dir = @CMAKE_SOURCE_DIR@/test
-cert_dir = @CMAKE_SOURCE_DIR@/test/certs
+test_src_dir = @CMAKE_SOURCE_DIR@/test
+mod_http3_path = @CMAKE_LIBRARY_OUTPUT_DIRECTORY@/mod_http3.so
+test_cert_file = @CMAKE_SOURCE_DIR@/test/certs/server.crt
+test_key_file = @CMAKE_SOURCE_DIR@/test/certs/server.key

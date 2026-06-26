@@ -73,4 +73,5 @@ cscope.*
 AGENTS.md
 .TODO
 certs/
+keys/
 config.ini
