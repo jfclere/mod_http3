@@ -56,18 +56,7 @@ else()
     file(MAKE_DIRECTORY "${APR_OUTPUT_DIRECTORY}/logs")
 
     if(EXISTS "${APR_DIRECTORY}/Makefile")
-
-      message(STATUS "[apr] Cleaning previous build artifacts")
-
-      execute_process(
-        COMMAND make distclean
-        WORKING_DIRECTORY "${APR_DIRECTORY}"
-        RESULT_VARIABLE _APR_DISTCLEAN_RESULT
-        OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log"
-        ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log")
-      if(NOT _APR_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "[apr] error: distclean failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-distclean.log")
-      endif()
+      file(REMOVE "${APR_DIRECTORY}/Makefile")
     endif()
 
     message(STATUS "[apr] Configuring -> ${APR_OUTPUT_DIRECTORY}")
@@ -90,6 +79,17 @@ else()
       ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log")
     if(NOT _APR_CONFIGURE_RESULT EQUAL 0)
       message(FATAL_ERROR "[apr] error: configure failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-configure.log")
+    endif()
+
+    message(STATUS "[apr] Cleaning workspace")
+    execute_process(
+      COMMAND make clean
+      WORKING_DIRECTORY "${APR_DIRECTORY}"
+      RESULT_VARIABLE _APR_CLEAN_RESULT
+      OUTPUT_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-clean.log"
+      ERROR_FILE "${APR_OUTPUT_DIRECTORY}/logs/apr-clean.log")
+    if(NOT _APR_CLEAN_RESULT EQUAL 0)
+      message(FATAL_ERROR "[apr] error: make clean failed -- see ${APR_OUTPUT_DIRECTORY}/logs/apr-clean.log")
     endif()
 
     message(STATUS "[apr] Building (${DEPENDENCIES_PARALLEL} jobs)")

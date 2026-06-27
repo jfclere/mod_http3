@@ -64,18 +64,7 @@ else()
     file(MAKE_DIRECTORY "${APU_OUTPUT_DIRECTORY}/logs")
 
     if(EXISTS "${APU_DIRECTORY}/Makefile")
-
-      message(STATUS "[apu] Cleaning previous build artifacts")
-
-      execute_process(
-        COMMAND make distclean
-        WORKING_DIRECTORY "${APU_DIRECTORY}"
-        RESULT_VARIABLE _APU_DISTCLEAN_RESULT
-        OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log"
-        ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log")
-      if(NOT _APU_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "[apu] error: distclean failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-distclean.log")
-      endif()
+      file(REMOVE "${APU_DIRECTORY}/Makefile")
     endif()
 
     message(STATUS "[apu] Configuring -> ${APU_OUTPUT_DIRECTORY}")
@@ -98,6 +87,17 @@ else()
       ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log")
     if(NOT _APU_CONFIGURE_RESULT EQUAL 0)
       message(FATAL_ERROR "[apu] error: configure failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-configure.log")
+    endif()
+
+    message(STATUS "[apu] Cleaning workspace")
+    execute_process(
+      COMMAND make clean
+      WORKING_DIRECTORY "${APU_DIRECTORY}"
+      RESULT_VARIABLE _APU_CLEAN_RESULT
+      OUTPUT_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-clean.log"
+      ERROR_FILE "${APU_OUTPUT_DIRECTORY}/logs/apu-clean.log")
+    if(NOT _APU_CLEAN_RESULT EQUAL 0)
+      message(FATAL_ERROR "[apu] error: make clean failed -- see ${APU_OUTPUT_DIRECTORY}/logs/apu-clean.log")
     endif()
 
     message(STATUS "[apu] Building (${DEPENDENCIES_PARALLEL} jobs)")

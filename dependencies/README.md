@@ -12,7 +12,7 @@ mod_http3 uses **git submodules** for all dependencies. By default, all dependen
 | httpd       | `dependencies/httpd`        | `trunk`         | 2.5.1-dev         | AP25 API; requires MMN ≥ 20211221/30. |
 | APR         | `dependencies/apr`          | `1.7.x`         | 1.7.7             | APR v2-dev (trunk) will subsume APR-util 1.x APIs. |
 | APR-util    | `dependencies/apr-util`     | `1.6.x`         | 1.6.4             | Legacy companion library; kept for APR 1.x compatibility. |
-| nghttp3     | `dependencies/nghttp3`      | `main`          | 1.15.x            | Always built from submodule.   |
+| nghttp3     | `dependencies/nghttp3`      | `main`          | 1.16.0            | HTTP/3 framing and QPACK.      |
 | googletest  | `dependencies/googletest`   | `v1.17.x`       | 1.17.x            | Test-only; not shipped.        |
 
 All submodules are shallow (`shallow = true`). Initialise them once:
@@ -21,8 +21,6 @@ All submodules are shallow (`shallow = true`). Initialise them once:
 git submodule sync --recursive
 git submodule update --init --recursive
 ```
-
-nghttp3 and googletest are *external* dependencies, thus they are always built from their submodules regardless of build options. All others follow the mode below.
 
 ---
 
@@ -46,13 +44,14 @@ mod_http3 uses APR bucket types (`AP_BUCKET_IS_RESPONSE`, etc.) that were introd
 
 ### Default -- Build from source
 
-CMake builds OpenSSL, APR, APR-util, and httpd from their respective git submodules at **configure time**, installing each into `dependencies/<dep>-dist/`. A small marker file (`dependencies/<dep>-dist/.done`) is used to skip rebuilding dependencies that are already up to date.
+CMake builds OpenSSL, APR, APR-util, httpd, and nghttp3 from their respective git submodules at **configure time**, installing each into `dependencies/<dep>-dist/`. A small marker file (`dependencies/<dep>-dist/.done`) is used to skip rebuilding dependencies that are already up to date.
 
 **Build order enforced by CMake:**
 1. OpenSSL (`dependencies/openssl`) -> `dependencies/openssl-dist/`
 2. APR (`dependencies/apr`) -> `dependencies/apr-dist/`
 3. APR-util (`dependencies/apr-util`) -> `dependencies/apr-util-dist/`
 4. httpd (`dependencies/httpd`) -> `dependencies/httpd-dist/`
+5. nghttp3 (`dependencies/nghttp3`) -> `dependencies/nghttp3-dist/`
 
 ```sh
 # default: builds all dependencies from source (first configure is slow; subsequent ones are instant from cache)
@@ -82,6 +81,7 @@ Provide `WITH_*` paths to use system-installed dependencies instead of building 
 | `WITH_HTTPD=/path` | httpd source build (includes APR/APU resolution via apxs) | MMN >= 20211221 |
 | `WITH_APR=/path` | APR source build | >= 1.7.0 |
 | `WITH_APU=/path` | APR-util source build | >= 1.6.0 |
+| `WITH_NGHTTP3=/path` | nghttp3 source build | ≥ 1.16.0 |
 
 ```sh
 cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd
@@ -92,6 +92,13 @@ If APR and APR-util are installed separately from httpd:
 
 ```sh
 cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd -DWITH_APR=/opt/apr -DWITH_APU=/opt/apr-util
+cmake --build build -j$(nproc)
+```
+
+Using a pre-built nghttp3:
+
+```sh
+cmake -B build -DWITH_NGHTTP3=/opt/nghttp3
 cmake --build build -j$(nproc)
 ```
 
@@ -134,6 +141,145 @@ The `.done` approach means you can also manually build and install or copy into 
 
 ---
 
+## Manual build reference
+
+The following are the exact configure/build commands CMake runs for each dependency. Use these if you want to build a dependency by hand and point `WITH_*` at the result.
+
+
+---
+
+### 1. OpenSSL (>= 3.5.0)
+
+Submodule: `dependencies/openssl` | cmake module: `cmake/modules/openssl.cmake`
+
+Uses OpenSSL's own `./config` wrapper (not autoconf).
+
+```sh
+cd dependencies/openssl
+
+./config \
+  --prefix=$PREFIX \
+  --openssldir=$PREFIX/ssl \
+  shared
+
+make clean
+make -j$(nproc)
+make install_sw
+```
+
+Hook up: `-DWITH_SSL=$PREFIX`
+
+---
+
+### 2. APR (>= 1.7.0)
+
+Submodule: `dependencies/apr` | cmake module: `cmake/modules/apr.cmake`
+
+Standard autoconf build; no extra flags.
+
+```sh
+cd dependencies/apr
+
+./buildconf
+
+./configure \
+  --prefix=$PREFIX
+
+make clean
+make -j$(nproc)
+make install
+```
+
+Hook up: `-DWITH_APR=$PREFIX`
+---
+
+### 3. APR-util (>= 1.6.0)
+
+Submodule: `dependencies/apr-util` | cmake module: `cmake/modules/apu.cmake`
+
+Must be built **after** APR. `buildconf` takes the APR **source** dir; `./configure` takes the APR **install** prefix.
+
+```sh
+cd dependencies/apr-util
+
+./buildconf --with-apr=../apr        # path to APR submodule source
+
+./configure \
+  --with-apr=$APR_PREFIX \           # APR install prefix (e.g. dependencies/apr-dist)
+  --prefix=$PREFIX
+
+make clean
+make -j$(nproc)
+make install
+```
+
+Hook up: `-DWITH_APU=$PREFIX`
+
+> If `WITH_APR` is set but `WITH_APU` is not, CMake also searches `$WITH_APR/bin/` for `apu-1-config`, so a co-installed APR/APU under one prefix works without specifying `WITH_APU`.
+
+---
+
+### 4. httpd (MMN >= 20211221)
+
+Submodule: `dependencies/httpd` | cmake module: `cmake/modules/httpd.cmake`
+
+Must be built **after** OpenSSL, APR, and APR-util. An `LDFLAGS` rpath is passed so the installed httpd finds the correct OpenSSL at runtime.
+
+```sh
+cd dependencies/httpd
+
+./buildconf \
+  --with-apr=../apr \                   # APR submodule source dir
+  --with-apr-util=../apr-util           # APU submodule source dir
+
+LDFLAGS="-Wl,-rpath,$OPENSSL_LIBDIR" \
+./configure \
+  --prefix=$PREFIX \
+  --with-apr=$APR_PREFIX \              # APR install prefix
+  --with-apr-util=$APU_PREFIX \         # APU install prefix
+  --enable-so \
+  --with-mpm=event \
+  --enable-mods-shared=all \
+  --enable-ssl \
+  --with-ssl=$OPENSSL_PREFIX            # OpenSSL install prefix
+
+make clean
+make -j$(nproc)
+make install
+```
+
+
+Hook up: `-DWITH_HTTPD=$PREFIX`
+
+---
+
+### 5. nghttp3 (>= 1.16.0)
+
+Submodule: `dependencies/nghttp3` | cmake module: `cmake/modules/nghttp3.cmake`
+
+Uses autoconf. The nested `sfparse` submodule must also be initialised before running `autoreconf`.
+
+```sh
+git submodule update --init dependencies/nghttp3
+git submodule update --init dependencies/nghttp3/lib/sfparse
+
+cd dependencies/nghttp3
+
+autoreconf -i
+
+./configure \
+  --prefix=$PREFIX \
+  --enable-lib-only
+
+make clean
+make -j$(nproc)
+make install
+```
+
+Hook up: `-DWITH_NGHTTP3=$PREFIX`
+
+---
+
 ## Verifying a build-from-source install
 
 ```sh
@@ -144,4 +290,7 @@ dependencies/httpd-dist/bin/apxs -q HTTPD_MMN       # expect 20211221
 # Confirm OpenSSL is the one httpd links
 ldd dependencies/httpd-dist/modules/mod_ssl.so | grep ssl
 # should show dependencies/openssl-dist/lib64/libssl.so, not /usr/lib/...
+
+# Confirm nghttp3 version
+grep 'NGHTTP3_VERSION ' dependencies/nghttp3-dist/include/nghttp3/version.h
 ```

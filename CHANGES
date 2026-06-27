@@ -3,6 +3,15 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.20 (2026-06-26)
+--------------------
+  *) Fixed container builds.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Bumped openssl, apr, apr-util on LTS branches. Updated httpd
+     due to openssl change, and updated nghttp3 to 1.16.0 release.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.19 (2026-06-25)
 --------------------
   *) Added 13 tests under test/http3/

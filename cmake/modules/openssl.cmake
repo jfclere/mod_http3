@@ -28,18 +28,7 @@ else()
     file(MAKE_DIRECTORY "${OPENSSL_OUTPUT_DIRECTORY}/logs")
 
     if(EXISTS "${OPENSSL_DIRECTORY}/Makefile")
-
-      message(STATUS "[openssl] Cleaning previous build artifacts")
-
-      execute_process(
-        COMMAND make distclean
-        WORKING_DIRECTORY "${OPENSSL_DIRECTORY}"
-        RESULT_VARIABLE _OPENSSL_DISTCLEAN_RESULT
-        OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log"
-        ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log")
-      if(NOT _OPENSSL_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "[openssl] error: distclean failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-distclean.log")
-      endif()
+      file(REMOVE "${OPENSSL_DIRECTORY}/Makefile")
     endif()
 
     message(STATUS "[openssl] Configuring -> ${OPENSSL_OUTPUT_DIRECTORY}")
@@ -52,6 +41,17 @@ else()
       ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log")
     if(NOT _OPENSSL_CONFIG_RESULT EQUAL 0)
       message(FATAL_ERROR "[openssl] error: configure failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-configure.log")
+    endif()
+
+    message(STATUS "[openssl] Cleaning workspace")
+    execute_process(
+      COMMAND make clean
+      WORKING_DIRECTORY "${OPENSSL_DIRECTORY}"
+      RESULT_VARIABLE _OPENSSL_CLEAN_RESULT
+      OUTPUT_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-clean.log"
+      ERROR_FILE "${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-clean.log")
+    if(NOT _OPENSSL_CLEAN_RESULT EQUAL 0)
+      message(FATAL_ERROR "[openssl] error: make clean failed -- see ${OPENSSL_OUTPUT_DIRECTORY}/logs/openssl-clean.log")
     endif()
 
     message(STATUS "[openssl] Building (${DEPENDENCIES_PARALLEL} jobs)")

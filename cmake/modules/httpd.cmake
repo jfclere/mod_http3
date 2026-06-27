@@ -52,18 +52,7 @@ else()
     file(MAKE_DIRECTORY "${HTTPD_OUTPUT_DIRECTORY}/logs")
 
     if(EXISTS "${HTTPD_DIRECTORY}/Makefile")
-
-      message(STATUS "[httpd] Cleaning previous build artifacts")
-
-      execute_process(
-        COMMAND make distclean
-        WORKING_DIRECTORY "${HTTPD_DIRECTORY}"
-        RESULT_VARIABLE _HTTPD_DISTCLEAN_RESULT
-        OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log"
-        ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log")
-      if(NOT _HTTPD_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "[httpd] error: distclean failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-distclean.log")
-      endif()
+      file(REMOVE "${HTTPD_DIRECTORY}/Makefile")
     endif()
 
     message(STATUS "[httpd] Configuring -> ${HTTPD_OUTPUT_DIRECTORY}")
@@ -104,6 +93,17 @@ else()
       ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log")
     if(NOT _HTTPD_CONFIGURE_RESULT EQUAL 0)
       message(FATAL_ERROR "[httpd] error: configure failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-configure.log")
+    endif()
+
+    message(STATUS "[httpd] Cleaning workspace")
+    execute_process(
+      COMMAND make clean
+      WORKING_DIRECTORY "${HTTPD_DIRECTORY}"
+      RESULT_VARIABLE _HTTPD_CLEAN_RESULT
+      OUTPUT_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-clean.log"
+      ERROR_FILE "${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-clean.log")
+    if(NOT _HTTPD_CLEAN_RESULT EQUAL 0)
+      message(FATAL_ERROR "[httpd] error: make clean failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-clean.log")
     endif()
 
     message(STATUS "[httpd] Building (${DEPENDENCIES_PARALLEL} jobs)")

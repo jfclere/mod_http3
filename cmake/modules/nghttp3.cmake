@@ -1,10 +1,10 @@
-# -- nghttp3 v1.15.90 --
+# -- nghttp3 v1.16.0 --
 
 if(TARGET nghttp3)
   return()
 endif()
 
-set(NGHTTP3_VERSION_MIN "1.15.90")
+set(NGHTTP3_VERSION_MIN "1.16.0")
 
 if(WITH_NGHTTP3)
   find_library(NGHTTP3_LIBRARY NAMES nghttp3
@@ -27,18 +27,7 @@ else()
     file(MAKE_DIRECTORY "${NGHTTP3_OUTPUT_DIRECTORY}/logs")
 
     if(EXISTS "${NGHTTP3_DIRECTORY}/Makefile")
-
-      message(STATUS "[nghttp3] Cleaning previous build artifacts")
-
-      execute_process(
-        COMMAND make distclean
-        WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
-        RESULT_VARIABLE _NGHTTP3_DISTCLEAN_RESULT
-        OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log"
-        ERROR_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log")
-      if(NOT _NGHTTP3_DISTCLEAN_RESULT EQUAL 0)
-        message(FATAL_ERROR "[nghttp3] error: distclean failed -- see ${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-distclean.log")
-      endif()
+      file(REMOVE "${NGHTTP3_DIRECTORY}/Makefile")
     endif()
 
     message(STATUS "[nghttp3] Configuring -> ${NGHTTP3_OUTPUT_DIRECTORY}")
@@ -54,13 +43,24 @@ else()
     endif()
 
     execute_process(
-      COMMAND ./configure --prefix=${NGHTTP3_OUTPUT_DIRECTORY} --enable-lib-only --enable-debug
+      COMMAND ./configure --prefix=${NGHTTP3_OUTPUT_DIRECTORY} --enable-lib-only #--enable-debug
       WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
       RESULT_VARIABLE _NGHTTP3_CONFIGURE_RESULT
       OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-configure.log"
       ERROR_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-configure.log")
     if(NOT _NGHTTP3_CONFIGURE_RESULT EQUAL 0)
       message(FATAL_ERROR "[nghttp3] error: configure failed -- see ${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-configure.log")
+    endif()
+
+    message(STATUS "[nghttp3] Cleaning workspace")
+    execute_process(
+      COMMAND make clean
+      WORKING_DIRECTORY "${NGHTTP3_DIRECTORY}"
+      RESULT_VARIABLE _NGHTTP3_CLEAN_RESULT
+      OUTPUT_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-clean.log"
+      ERROR_FILE "${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-clean.log")
+    if(NOT _NGHTTP3_CLEAN_RESULT EQUAL 0)
+      message(FATAL_ERROR "[nghttp3] error: make clean failed -- see ${NGHTTP3_OUTPUT_DIRECTORY}/logs/nghttp3-clean.log")
     endif()
 
     message(STATUS "[nghttp3] Building (${DEPENDENCIES_PARALLEL} jobs)")
