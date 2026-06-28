@@ -3,6 +3,23 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.21 (2026-06-27)
+--------------------
+  *) Fixed log format to use APR portable format specifiers.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added version string and number logging at startup.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Fixed OpenSSL attribution in license headers of h3_callbacks.h/c
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Extended container healthcheck timing to declutter while debugging.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Updated httpd upsteam to local fork for development.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.20 (2026-06-26)
 --------------------
   *) Fixed container builds.
