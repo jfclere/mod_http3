@@ -3,6 +3,20 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.23 (2026-06-30)
+--------------------
+  *) Gave each h3_stream its own pool
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added cert/key file read permission checks.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Cleaned up unused parameter casts.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Updated how h3_stream_find lookup to O(1) via apr_hash_get.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.22 (2026-06-29)
 --------------------
   *) Added H3MaxConcurrentStreams and H3StreamBufferSize directives.
