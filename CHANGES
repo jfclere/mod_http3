@@ -3,6 +3,17 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.24 (2026-07-01)
+--------------------
+  *) Fixed requests never reaching worker threads.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Un-xfail the two HTTP/3 GET tests now that pass.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Updated httpd submodule with matching optional function exports.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.23 (2026-06-30)
 --------------------
   *) Gave each h3_stream its own pool
