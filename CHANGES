@@ -3,6 +3,16 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.25 (2026-07-02)
+--------------------
+  *) Fix data corruption on graceful restart by waiting for workers to
+     finish before tearing down shared states.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Notify the MPM about connections so it keeps children alive 
+     while QUIC traffic is still active.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.24 (2026-07-01)
 --------------------
   *) Fixed requests never reaching worker threads.
