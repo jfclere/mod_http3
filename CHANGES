@@ -3,6 +3,23 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.26 (2026-07-03)
+--------------------
+  *) Gave each h3_session its own pool.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added H3MaxRequestBodySize, Alt-Svc, and H3AltSvcMaxAge directives.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added automatic Alt-Svc response header injection via ap_hook_fixups
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Improved connection handling and teardowns.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Allow for port acquisition with background thread.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.25 (2026-07-02)
 --------------------
   *) Fix data corruption on graceful restart by waiting for workers to
