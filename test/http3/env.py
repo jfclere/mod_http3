@@ -8,10 +8,6 @@ from pyhttpd.certs import Credentials
 class H3TestSetup(HttpdTestSetup):
     """Loads mod_http3 in addition to the standard test modules."""
 
-    def __init__(self, env: "H3TestEnv"):
-        super().__init__(env)
-        self.add_modules(["http3"])
-
     def _make_modules_conf(self):
         super()._make_modules_conf()
         path = self.env.mod_http3_path
@@ -73,16 +69,48 @@ class H3Conf(HttpdConf):
     def __init__(self, env: H3TestEnv):
         super().__init__(env)
 
-    def add_vhost_test1(self, proxy_self=False, h2proxy_self=False, h3_port=True):
+    def add_vhost_test1(
+        self,
+        proxy_self=False,
+        h2proxy_self=False,
+        h3_port=True,
+        h3_cert_path=None,
+        h3_key_path=None,
+        h3_max_concurrent_streams=None,
+        h3_stream_buffer_size=None,
+        h3_max_request_body_size=None,
+        h3_alt_svc=None,
+        h3_alt_svc_max_age=None,
+        extra_lines=None
+    ):
         self.start_vhost(
             [f"test1.{self.env.http_tld}"],
             doc_root="htdocs",
             with_ssl=True,
         )
         if h3_port:
-            self.add(f"H3Port {self.env.https_port}")
-        self.add("H3CertificatePath " + self.env.test_cert_file)
-        self.add("H3CertificateKeyPath " + self.env.test_key_file)
+            port = h3_port if not isinstance(h3_port, bool) else self.env.https_port
+            self.add(f"H3Port {port}")
+        
+        cert = h3_cert_path if h3_cert_path else self.env.test_cert_file
+        key = h3_key_path if h3_key_path else self.env.test_key_file
+        self.add(f"H3CertificatePath {cert}")
+        self.add(f"H3CertificateKeyPath {key}")
+
+        if h3_max_concurrent_streams is not None:
+            self.add(f"H3MaxConcurrentStreams {h3_max_concurrent_streams}")
+        if h3_stream_buffer_size is not None:
+            self.add(f"H3StreamBufferSize {h3_stream_buffer_size}")
+        if h3_max_request_body_size is not None:
+            self.add(f"H3MaxRequestBodySize {h3_max_request_body_size}")
+        if h3_alt_svc is not None:
+            val = "on" if h3_alt_svc is True else ("off" if h3_alt_svc is False else h3_alt_svc)
+            self.add(f"H3AltSvc {val}")
+        if h3_alt_svc_max_age is not None:
+            self.add(f"H3AltSvcMaxAge {h3_alt_svc_max_age}")
+
         self.add("Protocols h3 http/1.1")
+        for line in extra_lines or []:
+            self.add(line)
         self.end_vhost()
         return self

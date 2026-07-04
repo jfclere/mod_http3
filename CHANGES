@@ -3,6 +3,11 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.27 (2026-07-04)
+--------------------
+  *) Added more pytests for new features.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.26 (2026-07-03)
 --------------------
   *) Gave each h3_session its own pool.
