@@ -3,6 +3,20 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.28 (2026-07-05)
+--------------------
+  *) Added browser support! Updated debugger.sh and added browser.sh. 
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Moved threads (worker and event loop) to a h3_threads to declutter h3_io.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Improved teardown and connection cleanup handling in h3_io.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Added H3MaxConnections directive.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.27 (2026-07-04)
 --------------------
   *) Added more pytests for new features.

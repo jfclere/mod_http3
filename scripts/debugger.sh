@@ -3,6 +3,8 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+cmake -B build -G Ninja --fresh && cmake --build build
+
 HTTPD_PATH="${1:-$(pwd)/dependencies/httpd-dist}"
 
 if [ ! -d "$HTTPD_PATH" ]; then
@@ -10,30 +12,33 @@ if [ ! -d "$HTTPD_PATH" ]; then
     echo "Usage: $0 [path-to-httpd]" >&2
     exit 1
 fi
+
 HTTPD_PATH="$(cd "$HTTPD_PATH" && pwd)"
+HTTPD_CONF="$HTTPD_PATH/conf/httpd.conf"
+HTTPD_CERTS="$HTTPD_PATH/conf/certs"
+HTTPD_MODULE="$HTTPD_PATH/modules/mod_http3.so"
+HTTPD_HTDOCS="$HTTPD_PATH/htdocs"
+CERTS="container/certs"
 
-echo "=== Using httpd at: $HTTPD_PATH ==="
+cp build/lib/mod_http3.so "$HTTPD_MODULE"
 
-echo "=== Building mod_http3 ==="
-cmake --build build
-
-echo "=== Deploying module ==="
-cp build/lib/mod_http3.so "$HTTPD_PATH/modules/mod_http3.so"
-
-echo "=== Deploying conf ==="
 mkdir -p "$HTTPD_PATH/conf"
-# Replace the container's /src/dependencies/httpd-dist prefix with the real path.
-sed "s|/src/dependencies/httpd-dist|$HTTPD_PATH|g" container/httpd.conf > "$HTTPD_PATH/conf/httpd.conf"
+sed "s|/src/dependencies/httpd-dist|$HTTPD_PATH|g" container/httpd.conf > "$HTTPD_CONF"
 
-echo "=== Checking certificates ==="
-if [ ! -f "$HTTPD_PATH/conf/certs/server.crt" ] || [ ! -f "$HTTPD_PATH/conf/certs/server.key" ]; then
-    scripts/mkcert.sh "$HTTPD_PATH/conf/certs"
+if [ ! -f "$CERTS/server.crt" ] || [ ! -f "$CERTS/server.key" ]; then
+    scripts/mkcert.sh "$CERTS"
 fi
 
-echo "=== Ready to debug ==="
+mkdir -p "$HTTPD_CERTS"
+cp -a "$CERTS/." "$HTTPD_CERTS/"
+
+mkdir -p "$HTTPD_HTDOCS"
+rm -rf "$HTTPD_HTDOCS"/*
+cp -a container/static/. "$HTTPD_HTDOCS/"
+
 echo "Launch GDB with:"
-echo "  gdb --args $HTTPD_PATH/bin/httpd -X -f $HTTPD_PATH/conf/httpd.conf"
+echo "  gdb --args $HTTPD_PATH/bin/httpd -X -f $HTTPD_CONF"
 echo ""
 echo "Or run directly:"
-echo "  $HTTPD_PATH/bin/httpd -X -f $HTTPD_PATH/conf/httpd.conf"
+echo "  $HTTPD_PATH/bin/httpd -X -f $HTTPD_CONF"
 echo ""
