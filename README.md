@@ -92,16 +92,9 @@ Listen 4433 https
 
 See [INSTALL](INSTALL) for complete deployment steps.
 
-## Documentation
+## Contributing
 
-| File | Contents |
-|---|---|
-| [INSTALL](INSTALL) | Build, deploy, verify |
-| [CONFIGURATION.md](CONFIGURATION.md) | Advanced build options, dependency management |
-| [CONFIGURATION_HTTPD.md](CONFIGURATION_HTTPD.md) | httpd directives, VirtualHost, troubleshooting |
-| [docs/testing-with-curl.md](docs/testing-with-curl.md) | HTTP/3 testing with curl |
-| [docs/testing-examples.md](docs/testing-examples.md) | Example programs |
-| [container/README.md](container/README.md) | Container-based testing |
+We welcome contributions of all forms, including bug reports, documentation updates, code changes, and release testing. For guidelines on our community governance, voting procedures, and coding style, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -13,6 +13,7 @@ For httpd runtime directives (`H3CertificatePath`, VirtualHost), see [CONFIGURAT
 | `cmake -B build` | Configure |
 | `cmake --build build -j$(nproc)` | Build |
 | `cmake --build build -j$(nproc) --target tests` | Build + run tests |
+| `cmake --build build --target pytest` | Run Python tests |
 | `cmake --build build -j$(nproc) --target package` | Create ZIP/TGZ |
 | `cmake -LH -N -B build` | Print all cache variables |
 

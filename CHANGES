@@ -3,6 +3,12 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.29 (2026-07-06)
+--------------------
+  *) Added contribution documentation with coding-standard and
+     release-process as future work.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.28 (2026-07-05)
 --------------------
   *) Added browser support! Updated debugger.sh and added browser.sh. 
