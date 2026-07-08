@@ -72,7 +72,7 @@ curl --http3 -k -X PUT -T localfile.bin https://localhost:4433/upload/localfile.
 
 ## Alt-Svc Header
 
-mod_http3 does not inject `Alt-Svc`. It must come from `mod_headers`:
+mod_http3 injects `Alt-Svc` automatically when `H3AltSvc` is enabled, which is the default. Use `mod_headers` only to override that advertisement:
 
 ```apache
 Header always set Alt-Svc "h3=\":4433\"; ma=60; persist=1"

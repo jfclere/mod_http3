@@ -4,7 +4,7 @@ Standalone programs for testing and learning. All are built by default.
 
 ```sh
 cmake -B build -DBUILD_EXAMPLES=ON
-cmake --build build -j$(nproc)
+cmake --build build
 ```
 
 Binaries are in `build/bin/`.

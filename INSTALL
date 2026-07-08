@@ -8,7 +8,7 @@
 
      $ git submodule update --init --recursive
      $ cmake -B build
-     $ cmake --build build -j$(nproc)
+     $ cmake --build build
 
   To use system-installed dependencies, provide WITH_* paths:
 
@@ -18,7 +18,7 @@
          -DWITH_HTTPD=/opt/httpd \
          -DBUILD_EXAMPLES=OFF \
          -DBUILD_TESTS=OFF
-     $ cmake --build build -j$(nproc)
+     $ cmake --build build
 
   If APR and APR-util are installed separately from httpd:
 
@@ -29,16 +29,7 @@
          -DWITH_APU=/opt/apr-util \
          -DBUILD_EXAMPLES=OFF \
          -DBUILD_TESTS=OFF
-     $ cmake --build build -j$(nproc)
-
-  To enable tests, you'll need googletest:
-
-     $ git submodule update --init \
-         dependencies/nghttp3 dependencies/googletest
-     $ cmake -B build \
-         -DWITH_SSL=/opt/openssl \
-         -DWITH_HTTPD=/opt/httpd
-     $ cmake --build build -j$(nproc)
+     $ cmake --build build
 
   Output: build/lib/mod_http3.so
 
@@ -48,6 +39,7 @@
      httpd    MMN >= 20211221
      APR      >= 1.7.0
      APU      >= 1.6.0
+     nghttp3  >= 1.16.0
 
   NOTE: Distro-packaged httpd (Ubuntu, Fedora, etc.) ships with an
   older MMN and will be rejected. Use the default source build or
@@ -94,7 +86,6 @@
      Minimal httpd.conf:
 
         LoadModule ssl_module     modules/mod_ssl.so
-        LoadModule headers_module modules/mod_headers.so
         LoadModule http3_module   modules/mod_http3.so
 
         EnableMMAP Off
@@ -111,8 +102,6 @@
             H3CertificatePath    conf/certs/server.crt
             H3CertificateKeyPath conf/certs/server.key
 
-            Header always set Alt-Svc "h3=\":4433\"; ma=60; persist=1"
-
             DocumentRoot htdocs
             <Directory htdocs>
                 Require all granted
@@ -123,8 +112,10 @@
      content via apr_file_read; with MMAP active the file bucket
      bypasses the QUIC engine and corrupts the response.
 
-     mod_http3 does not inject Alt-Svc. The Header directive is
-     how TCP clients learn HTTP/3 is available on UDP.
+     mod_http3 injects the Alt-Svc response header automatically
+     (H3AltSvc, on by default). That header is how TCP clients
+     learn HTTP/3 is available on UDP. See CONFIGURATION_HTTPD.md
+     for H3AltSvc, H3AltSvcMaxAge, and the other H3* directives.
 
   4. Open the UDP port:
 

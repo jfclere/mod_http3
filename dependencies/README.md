@@ -13,7 +13,6 @@ mod_http3 uses **git submodules** for all dependencies. By default, all dependen
 | APR         | `dependencies/apr`          | `1.7.x`         | 1.7.7             | APR v2-dev (trunk) will subsume APR-util 1.x APIs. |
 | APR-util    | `dependencies/apr-util`     | `1.6.x`         | 1.6.4             | Legacy companion library; kept for APR 1.x compatibility. |
 | nghttp3     | `dependencies/nghttp3`      | `main`          | 1.16.0            | HTTP/3 framing and QPACK.      |
-| googletest  | `dependencies/googletest`   | `v1.17.x`       | 1.17.x            | Test-only; not shipped.        |
 
 All submodules are shallow (`shallow = true`). Initialise them once:
 
@@ -47,11 +46,11 @@ mod_http3 uses APR bucket types (`AP_BUCKET_IS_RESPONSE`, etc.) that were introd
 CMake builds OpenSSL, APR, APR-util, httpd, and nghttp3 from their respective git submodules at **configure time**, installing each into `dependencies/<dep>-dist/`. A small marker file (`dependencies/<dep>-dist/.done`) is used to skip rebuilding dependencies that are already up to date.
 
 **Build order enforced by CMake:**
-1. OpenSSL (`dependencies/openssl`) -> `dependencies/openssl-dist/`
-2. APR (`dependencies/apr`) -> `dependencies/apr-dist/`
-3. APR-util (`dependencies/apr-util`) -> `dependencies/apr-util-dist/`
-4. httpd (`dependencies/httpd`) -> `dependencies/httpd-dist/`
-5. nghttp3 (`dependencies/nghttp3`) -> `dependencies/nghttp3-dist/`
+1. nghttp3 (`dependencies/nghttp3`) -> `dependencies/nghttp3-dist/`
+2. OpenSSL (`dependencies/openssl`) -> `dependencies/openssl-dist/`
+3. APR (`dependencies/apr`) -> `dependencies/apr-dist/`
+4. APR-util (`dependencies/apr-util`) -> `dependencies/apr-util-dist/`
+5. httpd (`dependencies/httpd`) -> `dependencies/httpd-dist/`
 
 ```sh
 # default: builds all dependencies from source (first configure is slow; subsequent ones are instant from cache)

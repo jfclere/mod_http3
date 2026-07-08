@@ -3,6 +3,14 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.30 (2026-07-07)
+--------------------
+  *) Completed docs/coding-standards.md.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Documented all new directives and updated stale docs.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.29 (2026-07-06)
 --------------------
   *) Added contribution documentation with coding-standard and

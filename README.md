@@ -11,7 +11,7 @@ Default build compiles all dependencies (OpenSSL, APR, APR-util, httpd) from sub
 ```sh
 git submodule update --init --recursive
 cmake -B build
-cmake --build build -j$(nproc)
+cmake --build build
 ```
 
 Output: `build/lib/mod_http3.so`
@@ -20,7 +20,7 @@ To use system-installed dependencies instead, provide `WITH_*` paths:
 
 ```sh
 cmake -B build -DWITH_SSL=/opt/openssl -DWITH_HTTPD=/opt/httpd
-cmake --build build -j$(nproc)
+cmake --build build
 ```
 
 See [INSTALL](INSTALL) for full build instructions.
@@ -29,7 +29,7 @@ See [INSTALL](INSTALL) for full build instructions.
 
 | Option | Default | Description |
 |---|---|---|
-| `CMAKE_BUILD_TYPE` | `Release` | `Debug`, `Release` |
+| `CMAKE_BUILD_TYPE` | `Debug` | `Debug`, `Release` |
 | `BUILD_MODULE` | `ON` | Build `mod_http3.so` |
 | `BUILD_EXAMPLES` | `ON` | Build example programs |
 | `BUILD_TESTS` | `ON` | Build test suite |
@@ -37,6 +37,7 @@ See [INSTALL](INSTALL) for full build instructions.
 | `WITH_HTTPD` | (empty) | Path to httpd prefix (overrides source build) |
 | `WITH_APR` | (empty) | Path to APR prefix (overrides source build) |
 | `WITH_APU` | (empty) | Path to APR-util prefix (overrides source build) |
+| `WITH_NGHTTP3` | (empty) | Path to nghttp3 prefix (overrides source build) |
 | `ENABLE_ASAN` | `OFF` | Address Sanitizer (requires `Debug`) |
 | `ENABLE_UBSAN` | `OFF` | UB Sanitizer (requires `Debug`) |
 | `ENABLE_WERROR` | `OFF` | Treat warnings as errors |
@@ -62,7 +63,6 @@ Minimal VirtualHost configuration:
 
 ```apache
 LoadModule ssl_module     modules/mod_ssl.so
-LoadModule headers_module modules/mod_headers.so
 LoadModule http3_module   modules/mod_http3.so
 
 EnableMMAP Off
@@ -75,13 +75,10 @@ Listen 4433 https
     SSLCertificateFile    conf/server.crt
     SSLCertificateKeyFile conf/server.key
 
-    Header always set Alt-Svc "h3=\":8443\"; ma=60; persist=1"
-    Protocols h3
+    Protocols h3 h2 http/1.1
 
-    H3CertificatePath       /src/dependencies/httpd-dist/conf/certs/server.crt
-    H3CertificateKeyPath    /src/dependencies/httpd-dist/conf/certs/server.key
-
-    H3Port                  8443
+    H3CertificatePath     conf/server.crt
+    H3CertificateKeyPath  conf/server.key
 
     DocumentRoot htdocs
     <Directory htdocs>
@@ -90,7 +87,7 @@ Listen 4433 https
 </VirtualHost>
 ```
 
-See [INSTALL](INSTALL) for complete deployment steps.
+HTTP/3 support is advertised to clients automatically via an `Alt-Svc` response header (`H3AltSvc`, on by default). See [CONFIGURATION_HTTPD.md](CONFIGURATION_HTTPD.md) for all directives and [INSTALL](INSTALL) for complete deployment steps.
 
 ## Contributing
 

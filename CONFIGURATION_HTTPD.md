@@ -31,6 +31,62 @@ Path to the TLS certificate file for HTTP/3 connections. May point to the same f
 
 Path to the TLS private key file for HTTP/3 connections. May point to the same file used by `SSLCertificateKeyFile`.
 
+### H3Port
+
+**Syntax:** `H3Port port`
+**Context:** server config, virtual host
+**Default:** the port of the VirtualHost that configured HTTP/3
+
+UDP port the QUIC listener binds to. When unset, the module reuses the port of the VirtualHost that carries the `H3CertificatePath`/`H3CertificateKeyPath` pair, so TCP (HTTP/1.1, HTTP/2) and UDP (HTTP/3) share the same port number. Set it explicitly to serve HTTP/3 on a different port.
+
+### H3MaxConcurrentStreams
+
+**Syntax:** `H3MaxConcurrentStreams n`
+**Context:** server config, virtual host
+**Default:** `100`
+
+Maximum number of concurrent HTTP/3 streams (in-flight requests) per QUIC connection.
+
+### H3MaxConnections
+
+**Syntax:** `H3MaxConnections n`
+**Context:** server config, virtual host
+**Default:** `256`
+
+Maximum number of concurrent QUIC/HTTP/3 connections per child process. New connection attempts beyond the limit are refused.
+
+### H3StreamBufferSize
+
+**Syntax:** `H3StreamBufferSize bytes`
+**Context:** server config, virtual host
+**Default:** `65536`
+
+Per-stream read/write buffer size in bytes.
+
+### H3MaxRequestBodySize
+
+**Syntax:** `H3MaxRequestBodySize bytes`
+**Context:** server config, virtual host
+**Default:** `10485760` (10 MiB)
+
+Maximum HTTP/3 request body size in bytes. Request bodies are fully buffered in memory; requests exceeding the limit are rejected.
+
+### H3AltSvc
+
+**Syntax:** `H3AltSvc on|off`
+**Context:** server config, virtual host
+**Default:** `on`
+
+Whether to advertise HTTP/3 support by injecting an `Alt-Svc` response header. This is how browsers and other TCP clients discover that HTTP/3 is available over UDP. See [Alt-Svc Header](#alt-svc-header).
+
+### H3AltSvcMaxAge
+
+**Syntax:** `H3AltSvcMaxAge seconds`
+**Context:** server config, virtual host
+**Default:** `86400`
+
+Number of seconds a client may cache the `Alt-Svc` HTTP/3 advertisement (the `ma=` field of the injected header).
+
 ## VirtualHost Configuration
 
 ### Port Detection
@@ -46,7 +102,7 @@ The module automatically detects the port from the VirtualHost configuration:
 </VirtualHost>
 ```
 
-If no port is specified, the module defaults to **port 4433**.
+Use `H3Port` to bind the QUIC listener to a different UDP port than the VirtualHost's TCP port.
 
 ### Multiple VirtualHosts
 
@@ -70,17 +126,25 @@ The module uses the **first VirtualHost** that has both `H3CertificatePath` and 
 
 ### Alt-Svc Header
 
-mod_http3 does not inject the `Alt-Svc` header automatically. Add it via `mod_headers`:
+mod_http3 injects the `Alt-Svc` response header automatically when HTTP/3 is configured (controlled by [`H3AltSvc`](#h3altsvc), on by default):
+
+```
+Alt-Svc: h3=":4433"; ma=86400; persist=1
+```
+
+| Field | Meaning |
+|---|---|
+| `h3=":4433"` | HTTP/3 available on same host, on the `H3Port` |
+| `ma=86400` | Advertise for `H3AltSvcMaxAge` seconds |
+| `persist=1` | Persist across network changes |
+
+To customize the header beyond `H3AltSvcMaxAge`, set it manually via `mod_headers`; the module does not overwrite an already-present `Alt-Svc` header:
 
 ```apache
 Header always set Alt-Svc "h3=\":4433\"; ma=60; persist=1"
 ```
 
-| Field | Meaning |
-|---|---|
-| `h3=":4433"` | HTTP/3 available on same host, port 4433 |
-| `ma=60` | Advertise for 60 seconds |
-| `persist=1` | Persist across network changes |
+Disable the advertisement entirely with `H3AltSvc off`.
 
 ### EnableMMAP
 
