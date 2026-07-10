@@ -3,6 +3,22 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.31 (2026-07-09)
+--------------------
+  *) Dropped ap_pre_connection on synthetic connections and use mod_logio's
+     zero'd config directly.
+     [Jean-Frederic Clere <jfclere apache.org> <jfclere gmail.com>]
+
+  *) Fixed WITH_HTTPD test config.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Require the MPM extra-connection optional functions; fail listener
+     startup with an error if the MPM lacks them.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
+  *) Bumped the nghttp3 submodule to v1.17.0.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.30 (2026-07-07)
 --------------------
   *) Completed docs/coding-standards.md.

@@ -12,7 +12,7 @@ mod_http3 uses **git submodules** for all dependencies. By default, all dependen
 | httpd       | `dependencies/httpd`        | `trunk`         | 2.5.1-dev         | AP25 API; requires MMN ≥ 20211221/30. |
 | APR         | `dependencies/apr`          | `1.7.x`         | 1.7.7             | APR v2-dev (trunk) will subsume APR-util 1.x APIs. |
 | APR-util    | `dependencies/apr-util`     | `1.6.x`         | 1.6.4             | Legacy companion library; kept for APR 1.x compatibility. |
-| nghttp3     | `dependencies/nghttp3`      | `main`          | 1.16.0            | HTTP/3 framing and QPACK.      |
+| nghttp3     | `dependencies/nghttp3`      | `main`          | 1.17.0            | HTTP/3 framing and QPACK.      |
 
 All submodules are shallow (`shallow = true`). Initialise them once:
 

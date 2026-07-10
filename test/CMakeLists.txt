@@ -6,61 +6,51 @@ if(NOT APXS_EXECUTABLE)
   message(FATAL_ERROR "[test] apxs not found in ${HTTPD_OUTPUT_DIRECTORY}/bin - cannot configure pytest")
 endif()
 
-execute_process(COMMAND "${APXS_EXECUTABLE}" -q LIBEXECDIR
-  OUTPUT_VARIABLE LIBEXECDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+# apxs_query(<apxs-var> <out-var>) - sets <out-var> to `apxs -q <apxs-var>`
+function(apxs_query name out)
+  execute_process(COMMAND "${APXS_EXECUTABLE}" -q ${name}
+    OUTPUT_VARIABLE value OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  set(${out} "${value}" PARENT_SCOPE)
+endfunction()
 
+apxs_query(prefix HTTPD_PREFIX)
+apxs_query(progname HTTPD_NAME)
+apxs_query(LIBEXECDIR LIBEXECDIR)
+apxs_query(APR_BINDIR APR_BINDIR)
 if(NOT HTTPD_VERSION)
-  execute_process(COMMAND "${APXS_EXECUTABLE}" -q HTTPD_VERSION
-    OUTPUT_VARIABLE HTTPD_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
+  apxs_query(HTTPD_VERSION HTTPD_VERSION)
 endif()
-if(NOT HTTPD_VERSION)
-  message(FATAL_ERROR "[test] apxs could not report HTTPD_VERSION")
+if(NOT HTTPD_PREFIX OR NOT HTTPD_VERSION OR NOT LIBEXECDIR)
+  message(FATAL_ERROR "[test] ${APXS_EXECUTABLE} could not report prefix/HTTPD_VERSION/LIBEXECDIR")
+endif()
+if(NOT HTTPD_NAME)
+  set(HTTPD_NAME "httpd")
 endif()
 
-set(_HTTPD_CONFIG_VARS "${DEPENDENCIES_DIRECTORY}/httpd/build/config_vars.mk")
+# -- module lists from the installed DSOs --
+file(GLOB _dso_files RELATIVE "${LIBEXECDIR}" "${LIBEXECDIR}/mod_*.so")
+if(NOT _dso_files)
+  message(FATAL_ERROR "[test] no mod_*.so found under ${LIBEXECDIR}")
+endif()
 set(DSO_MODULES "")
 set(MPM_MODULES "")
-if(EXISTS "${_HTTPD_CONFIG_VARS}")
-  file(STRINGS "${_HTTPD_CONFIG_VARS}" _hcm_lines
-       REGEX "^(DSO_MODULES|MPM_MODULES)[ \t]*=")
-  foreach(_hcm_line IN LISTS _hcm_lines)
-    string(REGEX REPLACE "^(DSO_MODULES|MPM_MODULES)[ \t]*=[ \t]*" "" _hcm_val "${_hcm_line}")
-    if(_hcm_line MATCHES "^DSO_MODULES")
-      set(DSO_MODULES "${_hcm_val}")
-    elseif(_hcm_line MATCHES "^MPM_MODULES")
-      set(MPM_MODULES "${_hcm_val}")
-    endif()
-  endforeach()
-endif()
-if(NOT DSO_MODULES)
-  message(FATAL_ERROR "[test] DSO_MODULES not found in ${_HTTPD_CONFIG_VARS}")
-endif()
+foreach(_dso_file IN LISTS _dso_files)
+  string(REGEX REPLACE "^mod_(.+)\\.so$" "\\1" _module "${_dso_file}")
+  if(_module MATCHES "^mpm_")
+    list(APPEND MPM_MODULES "${_module}")
+  else()
+    list(APPEND DSO_MODULES "${_module}")
+  endif()
+endforeach()
+list(JOIN DSO_MODULES " " DSO_MODULES)
+list(JOIN MPM_MODULES " " MPM_MODULES)
 
-set(HTTPD_NAME "httpd")
-if(EXISTS "${_HTTPD_CONFIG_VARS}")
-  file(STRINGS "${_HTTPD_CONFIG_VARS}" _hcm_prog
-       REGEX "^progname[ \t]*=")
-  foreach(_hcm_line IN LISTS _hcm_prog)
-    string(REGEX REPLACE "^progname[ \t]*=[ \t]*" "" _hcm_val "${_hcm_line}")
-    if(_hcm_val)
-      set(HTTPD_NAME "${_hcm_val}")
-    endif()
-  endforeach()
-endif()
-
-set(HTTPD_PREFIX "${HTTPD_OUTPUT_DIRECTORY}")
-if(APR_OUTPUT_DIRECTORY)
-  set(APR_BINDIR "${APR_OUTPUT_DIRECTORY}/bin")
-else()
-  set(APR_BINDIR "${DEPENDENCIES_DIRECTORY}/apr-dist/bin")
-endif()
-
-find_program(CURL_BIN_EXECUTABLE NAMES curl
+# -- curl for the pytest clients --
+find_program(CURL_BIN NAMES curl
   HINTS "/opt/curl/bin" "/usr/bin" "/usr/local/bin")
-if(NOT CURL_BIN_EXECUTABLE)
-  set(CURL_BIN_EXECUTABLE "curl")
+if(NOT CURL_BIN)
+  set(CURL_BIN "curl")
 endif()
-set(CURL_BIN "${CURL_BIN_EXECUTABLE}")
 
 # -- pyhttpd config --
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pyhttpd/config.ini.in
