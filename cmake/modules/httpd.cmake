@@ -67,7 +67,7 @@ else()
       message(FATAL_ERROR "[httpd] error: buildconf failed -- see ${HTTPD_OUTPUT_DIRECTORY}/logs/httpd-buildconf.log")
     endif()
 
-    # Resolve OpenSSL lib dir for rpath - valid assumption that we have already built OpenSSL if we're building httpd from source
+    # Resolve OpenSSL's library directory without embedding it in an RPATH.
     get_filename_component(_HTTPD_OPENSSL_LIBDIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
 
     if(WITH_SSL)
@@ -77,7 +77,7 @@ else()
     endif()
 
     execute_process(
-      COMMAND ${CMAKE_COMMAND} -E env LDFLAGS=-Wl,-rpath,${_HTTPD_OPENSSL_LIBDIR}
+      COMMAND ${CMAKE_COMMAND} -E env LDFLAGS=-L${_HTTPD_OPENSSL_LIBDIR}
         "${HTTPD_DIRECTORY}/configure"
           --prefix=${HTTPD_OUTPUT_DIRECTORY}
           --with-apr=${APR_OUTPUT_DIRECTORY}

@@ -50,15 +50,6 @@ See [CONFIGURATION.md](CONFIGURATION.md) for advanced options and dependency int
 cmake --install build --prefix /opt/mod_http3
 ```
 
-Installed files:
-
-```
-lib64/httpd/modules/mod_http3.so
-etc/httpd/conf.modules.d/10-h3.conf
-share/doc/mod_http3/    (CHANGES, NOTICE, AUTHORS)
-share/licenses/mod_http3/LICENSE
-```
-
 Minimal VirtualHost configuration:
 
 ```apache

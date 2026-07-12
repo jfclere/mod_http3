@@ -46,17 +46,38 @@
   provide a custom prefix install via WITH_HTTPD instead.
 
 
-  Install
-  -------
+   Package and Install
+   -------------------
 
-     $ cmake --install build --prefix /opt/mod_http3
+   CMake's normal install target intentionally excludes distribution layouts.
+   To build binary packages locally:
 
-  Installed files:
+      $ cmake -B build -DCMAKE_BUILD_TYPE=Release
+      $ cmake --build build --target release
 
-     /opt/mod_http3/lib64/httpd/modules/mod_http3.so
-     /opt/mod_http3/etc/httpd/conf.modules.d/10-h3.conf
-     /opt/mod_http3/share/doc/mod_http3/       (CHANGES, NOTICE, AUTHORS)
-     /opt/mod_http3/share/licenses/mod_http3/   (LICENSE)
+   The packages are written to build/dist/:
+
+      mod_http3-X.Y.Z-linux-<arch>.tar.gz
+      mod_http3-X.Y.Z-linux-<arch>.zip
+      mod_http3-X.Y.Z.<arch>.rpm
+      mod_http3_X.Y.Z_<arch>.deb
+
+   Verify a downloaded or locally built artifact with its matching checksum:
+
+      $ (cd build/dist && sha256sum -c mod_http3-X.Y.Z-linux-<arch>.tar.gz.sha256)
+
+   Install the generic Linux archive under a chosen prefix:
+
+      $ sudo mkdir -p /opt/mod_http3
+      $ sudo tar -xzf build/dist/mod_http3-X.Y.Z-linux-<arch>.tar.gz -C /opt/mod_http3
+
+   Alternatively, install the native package for the target system:
+
+      $ sudo dnf install build/dist/mod_http3-X.Y.Z.<arch>.rpm
+      $ sudo apt install ./build/dist/mod_http3_X.Y.Z_<arch>.deb
+
+   These native packages require a custom httpd with MMN >= 20211221. They are
+   not (yet) compatible with stock Apache/httpd 2.4 packages supplied by distributions.
 
 
   Deploy into httpd

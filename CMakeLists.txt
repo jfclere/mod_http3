@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(mod_http3 VERSION 0.0.31)
+project(mod_http3 VERSION 0.0.32)
 
 # -- Compiler and Build Type Checks --
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -81,8 +81,6 @@ if(BUILD_MODULE)
 
   set_target_properties(${PROJECT_NAME}-lib PROPERTIES PREFIX "" OUTPUT_NAME "${PROJECT_NAME}")
   apply_target_flags(${PROJECT_NAME}-lib)
-
-  install(TARGETS ${PROJECT_NAME}-lib LIBRARY DESTINATION lib64/httpd/modules)
 endif()
 
 # -- Examples --
@@ -96,12 +94,18 @@ if(BUILD_TESTS)
   add_subdirectory(test)
 endif()
 
-# -- Installation --
-install(FILES "10-h3.conf" DESTINATION etc/httpd/conf.modules.d)
-install(FILES "CHANGES" DESTINATION share/doc/mod_http3)
-install(FILES "NOTICE" DESTINATION share/doc/mod_http3)
-install(FILES "AUTHORS" DESTINATION share/doc/mod_http3)
-install(FILES "LICENSE" DESTINATION share/licenses/mod_http3)
+# -- Generic installation --
+install(TARGETS ${PROJECT_NAME}-lib
+  LIBRARY DESTINATION lib64/httpd/modules
+  COMPONENT generic)
+install(FILES "${CMAKE_SOURCE_DIR}/CHANGES"
+  "${CMAKE_SOURCE_DIR}/NOTICE"
+  "${CMAKE_SOURCE_DIR}/AUTHORS"
+  DESTINATION share/doc/mod_http3
+  COMPONENT generic)
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
+  DESTINATION share/licenses/mod_http3
+  COMPONENT generic)
 
 # -- Summary --
 message(STATUS "")
