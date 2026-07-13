@@ -1,0 +1,60 @@
+The mod_http3 Source Tree LAYOUT
+Last updated: 2026-07-13
+---------------------------------
+
+./ ........................ Top-Level mod_http3 Root Directory
+
+  .clang-format ............ Clang-format style configuration
+  .containerignore ......... Files excluded from container builds
+  .editorconfig ............ Editor configuration for consistent code style
+  .gitignore ............... Git ignore rules
+  .gitmodules .............. Git submodule definitions for all dependencies
+  AUTHORS .................. Copyright holders and individual contributors
+  CHANGES .................. Chronological release changelog
+  CMakeLists.txt ........... Top-level CMake build definition
+  CONFIGURATION.md ......... Advanced CMake build options and internals
+  CONFIGURATION_HTTPD.md ... httpd directive reference for mod_http3
+  CONTRIBUTING.md .......... Community governance, roles, voting, and workflow
+  COPYING .................. License pointer
+  INSTALL .................. Build, package, and deployment instructions
+  LAYOUT ................... This file describing the source tree
+  LICENSE .................. Apache License 2.0 full text
+  NOTICE ................... Required attribution notices
+  README.md ................ Project overview and quick-start guide
+  SECURITY.md .............. Security policy and vulnerability reporting
+  VERSIONING ............... Versioning scheme and release lifecycle
+
+mod_http3/ ................ Core Module Source Code
+
+  include/ .................. Public headers
+
+  src/ ...................... Implementation files
+
+cmake/ .................... CMake Build System
+
+  modules/ .................. Dependency discovery and build modules
+
+  packaging/ ................ CPack packaging configuration
+
+  utils/ .................... Shared CMake utilities
+
+  packaging.cmake ........... CPack integration (TAR.GZ, ZIP, DEB, RPM)
+  version.h.cmake ........... Template for auto-generated h3_version.h
+
+dependencies/ ............. Third-Party Dependencies (Git Submodules)
+
+test/ ..................... Test Suite
+
+  http3/ .................... HTTP/3 integration tests (pytest)
+
+  pyhttpd/ .................. Python httpd test harness library
+
+  unit/ ..................... C unit tests
+
+docs/ ..................... Documentation
+
+examples/ ................. Example Programs
+
+scripts/ .................. Helper Scripts
+
+container/ ................ Container Support

@@ -3,6 +3,11 @@ mod_http3 changes
 Changes are listed most recent first.
 Security-related entries always appear at the top of their release block.
 
+v0.0.33 (2026-07-12)
+--------------------
+  *) Added QoL and standard OSS files to improve the contributor experience.
+     [Tarek Ibrahim <tareki pulsarxtech.com> <t1br4h1m gmail.com>]
+
 v0.0.32 (2026-07-11)
 --------------------
   *) Added source and binary distributions for generic Linux ZIP/TAR.GZ,

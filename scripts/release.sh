@@ -15,7 +15,8 @@ BUILD_DIR="build-release"
 DIST_DIR="${BUILD_DIR}/dist"
 
 echo "==> Configuring and building release artifacts..."
-cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -G Ninja
+cmake --build "$BUILD_DIR"
 cmake --build "$BUILD_DIR" --target release -- -j"$(nproc)"
 
 if [[ ! -d "$DIST_DIR" ]]; then
@@ -27,7 +28,7 @@ echo "==> Generating checksums and signatures..."
 cd "$DIST_DIR"
 
 # Ensure clean slate for signatures
-rm -f *.asc SHA256SUMS
+rm -f *.asc
 
 GPG_OPTS=("--batch" "--yes" "--detach-sign" "--armor")
 if [[ -n "${GPG_KEY:-}" ]]; then
@@ -36,7 +37,7 @@ fi
 
 # Hash and sign each artifact
 shopt -s nullglob
-for artifact in mod_http3-*; do
+for artifact in mod_http3[-_]*; do
   if [[ "$artifact" == *.sha256 || "$artifact" == *.asc ]]; then
     continue
   fi
@@ -45,11 +46,6 @@ for artifact in mod_http3-*; do
   sha256sum "$artifact" > "${artifact}.sha256"
   gpg "${GPG_OPTS[@]}" --output "${artifact}.asc" "$artifact"
 done
-
-# Create and sign the aggregate checksum manifest
-echo " -> Generating aggregate SHA256SUMS"
-sha256sum *.sha256 > SHA256SUMS
-gpg "${GPG_OPTS[@]}" --output SHA256SUMS.asc SHA256SUMS
 
 echo "==> Done. Release artifacts are available in ${DIST_DIR}/"
 ls -lh

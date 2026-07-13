@@ -1,0 +1,133 @@
+MOD_HTTP3 VERSIONING
+====================
+
+
+INTRODUCTION
+------------
+mod_http3 is an Apache httpd module that adds HTTP/3 support over QUIC.
+This document describes how the project uses version numbers, how
+releases are classified, and how compatibility guarantees evolve as the
+project matures toward its first stable release.
+
+The project follows the general versioning philosophy of the Apache HTTP
+Server, adapted to the realities of a young, rapidly evolving module.
+
+
+VERSION NUMBERING
+-----------------
+Versions follow the pattern MAJOR.MINOR.PATCH:
+
+  * MAJOR -- incremented for incompatible changes that affect the public
+    API surface or require significant migration effort.
+  * MINOR -- even numbers (0, 2, 4, …) denote stable/GA branches; odd
+    numbers (1, 3, 5, …) denote development/alpha/beta branches.
+  * PATCH -- incremented for each release within a minor branch.
+
+The version is defined in one authoritative location:
+
+    project(mod_http3 VERSION X.Y.Z)         # CMakeLists.txt (line 3)
+
+CMake generates mod_http3/include/h3_version.h from this value,
+providing compile-time constants:
+
+    MOD_HTTP3_VERSION_MAJOR    — major component
+    MOD_HTTP3_VERSION_MINOR    — minor component
+    MOD_HTTP3_VERSION_PATCH    — patch component
+    MOD_HTTP3_VERSION          — packed 24-bit integer (0xMMmmpp)
+    MOD_HTTP3_VERSION_STRING   — human-readable "X.Y.Z"
+
+
+PRE-1.0: EXPERIMENTAL PHASE (current)
+--------------------------------------
+The project is currently in the 0.0.x series. During this phase:
+
+  * The module carries an "experimental" status.
+  * The configuration directive interface may change between patch 
+    releases.
+  * The internal C API is not yet stable and may be reorganised.
+  * Each 0.0.x release is a self-contained snapshot; there are no
+    back-port branches.
+  * Binary compatibility between releases is not guaranteed; always
+    rebuild after upgrading.
+
+The 0.0.x series is expected to transition to 0.1.x (development) and
+then to 0.2.x (first stable) or directly to 1.0.0, depending on the
+scope of remaining API changes.
+
+
+STABLE RELEASES, X.{even}.Z
+----------------------------
+Once the project reaches its first stable release, even-numbered minor
+versions will carry these guarantees for the lifetime of the minor
+branch:
+
+  * The httpd directive interface (H3* directives) is forward compatible.
+    New directives may be added; existing directives will not be removed
+    or have their semantics changed incompatibly.
+
+  * The CMake build interface (WITH_*, BUILD_*, ENABLE_* options) is
+    forward compatible. Options that work in one patch release will
+    continue to work in the next.
+
+  * Module output (mod_http3.so) built against one patch release will
+    load into the same httpd used to build any other patch release
+    within the same minor branch (same httpd MMN).
+
+  * No experimental features are introduced directly into a stable
+    branch. New features are developed in the corresponding odd-minor
+    development branch and promoted to stable only after they are proven
+    and compatible.
+
+
+DEVELOPMENT RELEASES, X.{odd}.Z
+---------------------------------
+Odd-numbered minor versions are the active development branches, always
+one greater than the current stable minor:
+
+  * API and directive changes are permitted at any time.
+  * Internal source reorganisation may occur between patch releases.
+  * Binary compatibility across development patch releases is not
+    guaranteed.
+  * Development releases may be classified as alpha, beta, or GA to
+    reflect the perceived stability of the tree.
+  * Any committer may cut a development release at any time.
+
+Features that prove stable in the development branch may be promoted to
+the next stable release by a consensus vote of active committers. A
+feature cannot change once promoted, so the vote must confirm that the
+interface and behaviour are final.
+
+
+RELEASE CANDIDATES
+------------------
+To avoid "skipped" version numbers, every release is first tagged as a
+release candidate:
+
+    vX.Y.Z-rc1, vX.Y.Z-rc2, …
+
+The scripts/release.sh tool automates candidate creation, artifact
+building, signing, and GitHub draft releases. A candidate is promoted
+to the final vX.Y.Z tag only after it receives at least three +1 votes
+from active PMC members with no unresolved issues.
+
+If a candidate fails its vote, the tag is removed, the issue is fixed,
+and a new candidate suffix is used (rc2, rc3, …).
+
+See docs/release-process.md for the complete release engineering
+workflow.
+
+
+MAJOR VERSION BUMPS
+-------------------
+When promoting a development branch to stable, the committers decide
+whether the accumulated changes warrant a major version bump. The
+rule of thumb: if porting user configurations or rebuilding with the
+new version requires non-trivial effort, the major version should be
+incremented.
+
+
+CHANGELOG
+---------
+All user-visible changes are recorded in the CHANGES file. Entries are
+listed in reverse chronological order. Security-related entries always
+appear at the top of their release block, prefixed with "SECURITY:".
