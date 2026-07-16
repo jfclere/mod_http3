@@ -226,8 +226,9 @@ int on_stream_close(nghttp3_conn* /*conn*/, int64_t stream_id, uint64_t /*app_er
         stream->done = 1;
         h3_session_queue_free(session, stream->ssl_stream);
         stream->ssl_stream = NULL;
-        apr_hash_set(session->streams, &stream_id, sizeof(stream_id), NULL);
-        apr_pool_destroy(stream->pool);
+        /* DO NOT modify session->streams hash or destroy the pool here!
+         * We may be called during hash iteration in drain_ready_streams.
+         * The stream will be cleaned up after iteration completes. */
     }
     return 0;
 }

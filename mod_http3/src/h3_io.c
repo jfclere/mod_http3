@@ -428,6 +428,8 @@ void service_connection(h3_io_t* io, h3_session* session)
             do
             {
                 keep_pumping = 0;
+                int made_progress = 0;
+
                 if (!tick_engine(conn))
                 {
                     session->aborted = 1;
@@ -442,6 +444,7 @@ void service_connection(h3_io_t* io, h3_session* session)
 
                 for (SSL* s2 = NULL; (s2 = SSL_accept_stream(conn, SSL_ACCEPT_STREAM_NO_BLOCK)) != NULL;)
                 {
+                    made_progress = 1;
                     int64_t sid = (int64_t)SSL_get_stream_id(s2);
                     if (sid < 0)
                     {
@@ -460,19 +463,25 @@ void service_connection(h3_io_t* io, h3_session* session)
 
                 apr_thread_mutex_lock(session->lock);
                 apr_pool_clear(scratch);
-                apr_array_header_t* completed = drain_ready_streams(session, scratch);
+                drain_result_t drain_result = drain_ready_streams(session, scratch);
                 flush_nghttp3(session);
                 apr_thread_mutex_unlock(session->lock);
 
-                if (session->ngh3_dead)
+                if (session->aborted || session->ngh3_dead)
                 {
                     session->aborted = 1;
                     break;
                 }
 
-                for (int i = 0; i < completed->nelts; i++)
+                /* Track progress: data read or requests completed */
+                if (drain_result.data_read || drain_result.completed->nelts > 0)
                 {
-                    h3_stream* h3s = ((h3_stream**)completed->elts)[i];
+                    made_progress = 1;
+                }
+
+                for (int i = 0; i < drain_result.completed->nelts; i++)
+                {
+                    h3_stream* h3s = ((h3_stream**)drain_result.completed->elts)[i];
                     h3_process_request(session, h3s);
                 }
 
@@ -480,7 +489,9 @@ void service_connection(h3_io_t* io, h3_session* session)
                 flush_nghttp3(session);
                 apr_thread_mutex_unlock(session->lock);
 
-                keep_pumping = SSL_net_read_desired(conn) || SSL_net_write_desired(conn);
+                /* Only keep pumping if we made progress.
+                 * If no progress, break out and wait for actual I/O on the socket. */
+                keep_pumping = made_progress && (SSL_net_read_desired(conn) || SSL_net_write_desired(conn));
             } while (keep_pumping);
 
             if (session->aborted)

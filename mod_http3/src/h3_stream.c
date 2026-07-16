@@ -32,6 +32,7 @@
 #include "h3_check.h"
 #include "h3_config.h"
 #include "h3_session.h"
+#include "h3_stream.h"
 #include "mod_http3.h"
 
 h3_stream* h3_stream_find(h3_session* session, int64_t sid)
@@ -123,10 +124,17 @@ static void mark_ngh3_dead(h3_session* session, int64_t stream_id, nghttp3_ssize
     ap_log_error(APLOG_MARK, APLOG_ERR, 0, session->s, "read_stream failed for stream %" APR_INT64_T_FMT " (%s, err=%" APR_INT64_T_FMT "); closing with QUIC error 0x%" APR_UINT64_T_HEX_FMT, stream_id, session->abort_reason, (apr_int64_t)liberr, session->abort_quic_error_code);
 }
 
-static int drain_one_stream(h3_session* session, h3_stream* h3s)
+/* Returns: >0 if stream is ready to dispatch, 0 otherwise.
+ * Sets *bytes_read to the number of bytes actually read from the stream. */
+static int drain_one_stream(h3_session* session, h3_stream* h3s, size_t* bytes_read)
 {
     CHECK(session);
     CHECK(h3s);
+
+    if (bytes_read)
+    {
+        *bytes_read = 0;
+    }
 
     h3_server_conf* conf = ap_get_module_config(session->s->module_config, &http3_module);
     apr_size_t buf_size = conf->h3_stream_buffer_size;
@@ -137,62 +145,168 @@ static int drain_one_stream(h3_session* session, h3_stream* h3s)
     }
     unsigned char* buf = session->stream_read_buf;
 
-    for (;;)
+    /* First check if the stream read side is finished using proper OpenSSL API */
+    int read_state = SSL_get_stream_read_state(h3s->ssl_stream);
+    if (read_state == SSL_STREAM_STATE_FINISHED ||
+        read_state == SSL_STREAM_STATE_RESET_REMOTE ||
+        read_state == SSL_STREAM_STATE_CONN_CLOSED)
     {
-        size_t nread = 0;
-        int rv = SSL_read_ex(h3s->ssl_stream, buf, buf_size, &nread);
-        if (rv == 1 && nread > 0)
-        {
-            session->pending.sid = h3s->stream_id;
-            session->pending.h3s = h3s;
-            nghttp3_ssize consumed = nghttp3_conn_read_stream(session->ngh3, h3s->stream_id, buf, nread, 0);
-            session->pending.sid = -1;
-            session->pending.h3s = NULL;
-            if (consumed < 0)
-            {
-                /* Mark dead if read fails. */
-                mark_ngh3_dead(session, h3s->stream_id, consumed);
-                h3s->done = 1;
-                break;
-            }
-            if (h3s->done)
-            {
-                break;
-            }
-            continue;
-        }
-        if (SSL_get_error(h3s->ssl_stream, rv) == SSL_ERROR_ZERO_RETURN)
+        /* Stream read side is done - notify nghttp3 with FIN */
+        if (!h3s->body_complete)
         {
             nghttp3_ssize consumed = nghttp3_conn_read_stream(session->ngh3, h3s->stream_id, NULL, 0, 1);
             if (consumed < 0)
             {
                 mark_ngh3_dead(session, h3s->stream_id, consumed);
             }
-            h3s->done = 1;
             h3s->body_complete = 1;
         }
+
+        /* Check if write side is also finished - if so, close the stream in nghttp3 */
+        int write_state = SSL_get_stream_write_state(h3s->ssl_stream);
+        if (write_state == SSL_STREAM_STATE_FINISHED)
+        {
+            /* Both sides finished - tell nghttp3 to close the stream */
+            nghttp3_conn_close_stream(session->ngh3, h3s->stream_id, NGHTTP3_H3_NO_ERROR);
+            /* on_stream_close callback will be invoked, which will set done=1 and free ssl_stream */
+        }
+
+        /* Return true if request is ready to be dispatched */
+        return h3s->is_bidi && h3s->headers_complete && h3s->body_complete && !h3s->dispatched;
+    }
+
+    int loop_count = 0;
+    for (;;)
+    {
+        if (++loop_count > 1000)
+        {
+            ap_log_error(APLOG_MARK, APLOG_ERR, 0, session->s,
+                        "FATAL: drain_one_stream infinite loop detected for stream %lld after 1000 iterations",
+                        (long long)h3s->stream_id);
+            h3s->done = 1;
+            session->aborted = 1;
+            break;
+        }
+
+        /* Check ssl_stream is still valid - callback might have freed it */
+        if (!h3s->ssl_stream)
+        {
+            h3s->done = 1;
+            break;
+        }
+
+        size_t nread = 0;
+        int rv = SSL_read_ex(h3s->ssl_stream, buf, buf_size, &nread);
+
+        if (rv == 1)
+        {
+            if (nread > 0)
+            {
+                /* Got data - track it and pass to nghttp3 */
+                if (bytes_read)
+                {
+                    *bytes_read += nread;
+                }
+                session->pending.sid = h3s->stream_id;
+                session->pending.h3s = h3s;
+                nghttp3_ssize consumed = nghttp3_conn_read_stream(session->ngh3, h3s->stream_id, buf, nread, 0);
+                session->pending.sid = -1;
+                session->pending.h3s = NULL;
+                if (consumed < 0)
+                {
+                    /* Mark dead if read fails. */
+                    mark_ngh3_dead(session, h3s->stream_id, consumed);
+                    h3s->done = 1;
+                    break;
+                }
+                if (h3s->done)
+                {
+                    break;
+                }
+                /* Continue reading - there may be more data or FIN */
+                continue;
+            }
+            else
+            {
+                /* rv == 1, nread == 0: stream read side closed (FIN received from client) */
+                nghttp3_ssize consumed = nghttp3_conn_read_stream(session->ngh3, h3s->stream_id, NULL, 0, 1);
+                if (consumed < 0)
+                {
+                    mark_ngh3_dead(session, h3s->stream_id, consumed);
+                }
+                /* Mark request as complete, but DON'T free the SSL stream yet!
+                 * The stream is bidirectional - client closed their write side,
+                 * but we still need to send the response. nghttp3 will call
+                 * on_stream_close when it's done, which will free the SSL stream. */
+                h3s->body_complete = 1;
+                break;
+            }
+        }
+
+        /* rv != 1: check error type */
+        if (!h3s->ssl_stream)
+        {
+            h3s->done = 1;
+            break;
+        }
+
+        int err = SSL_get_error(h3s->ssl_stream, rv);
+        if (err == SSL_ERROR_ZERO_RETURN)
+        {
+            /* Stream read side closed */
+            nghttp3_ssize consumed = nghttp3_conn_read_stream(session->ngh3, h3s->stream_id, NULL, 0, 1);
+            if (consumed < 0)
+            {
+                mark_ngh3_dead(session, h3s->stream_id, consumed);
+            }
+            /* Mark request as complete, but DON'T free the SSL stream yet!
+             * nghttp3 will call on_stream_close when both sides are done. */
+            h3s->body_complete = 1;
+        }
+        /* For SSL_ERROR_WANT_READ or other non-fatal errors, just stop reading for now */
         break;
     }
     return h3s->is_bidi && h3s->headers_complete && h3s->body_complete && !h3s->dispatched;
 }
 
-apr_array_header_t* drain_ready_streams(h3_session* session, apr_pool_t* loop_pool)
+drain_result_t drain_ready_streams(h3_session* session, apr_pool_t* loop_pool)
 {
     CHECK(session);
     CHECK(loop_pool);
-    apr_array_header_t* completed = apr_array_make(loop_pool, 4, sizeof(h3_stream*));
+    drain_result_t result = {0};
+    result.completed = apr_array_make(loop_pool, 4, sizeof(h3_stream*));
+    result.data_read = 0;
+
+    /* Count streams by state before iteration */
+    unsigned int total_streams = session->streams ? apr_hash_count(session->streams) : 0;
 
     apr_array_header_t* snapshot = apr_array_make(loop_pool, 8, sizeof(h3_stream*));
-    if (session->streams)
+    if (session->streams && total_streams > 0)
     {
-        for (apr_hash_index_t* hi = apr_hash_first(loop_pool, session->streams); hi; hi = apr_hash_next(hi))
+        /* Use NULL pool for hash iterator to avoid any pool-related issues,
+         * and add iteration limit to detect hash corruption/infinite loops.
+         * The limit should be at least total_streams + some margin for safety. */
+        unsigned int iteration_count = 0;
+        const unsigned int MAX_ITERATIONS = total_streams + 100; /* Allow for actual stream count plus margin */
+
+
+        for (apr_hash_index_t* hi = apr_hash_first(NULL, session->streams); hi; hi = apr_hash_next(hi))
         {
+            if (++iteration_count > MAX_ITERATIONS)
+            {
+                ap_log_error(APLOG_MARK, APLOG_ERR, 0, session->s,
+                            "FATAL: hash iteration exceeded %d iterations (hash reports %d entries) - hash corruption detected, aborting connection",
+                            MAX_ITERATIONS, total_streams);
+                session->aborted = 1;
+                break;
+            }
             h3_stream* h3s = apr_hash_this_val(hi);
             if (h3s)
             {
                 *(h3_stream**)apr_array_push(snapshot) = h3s;
             }
         }
+
     }
 
     for (int i = 0; i < snapshot->nelts; i++)
@@ -203,7 +317,7 @@ apr_array_header_t* drain_ready_streams(h3_session* session, apr_pool_t* loop_po
         }
         h3_stream* h3s = ((h3_stream**)snapshot->elts)[i];
 
-        if (!h3s->ssl_stream || h3s->done)
+        if (!h3s || h3s->done || !h3s->ssl_stream)
         {
             continue;
         }
@@ -211,11 +325,57 @@ apr_array_header_t* drain_ready_streams(h3_session* session, apr_pool_t* loop_po
         {
             continue;
         }
-        if (drain_one_stream(session, h3s) && !session->ngh3_dead)
+        size_t stream_bytes_read = 0;
+        if (drain_one_stream(session, h3s, &stream_bytes_read) && !session->ngh3_dead)
         {
-            h3_stream** slot = (h3_stream**)apr_array_push(completed);
+            h3_stream** slot = (h3_stream**)apr_array_push(result.completed);
             *slot = h3s;
         }
+        if (stream_bytes_read > 0)
+        {
+            result.data_read = 1;
+        }
     }
-    return completed;
+
+    /* Clean up streams marked as done - AFTER iteration completes, it's safe to modify the hash.
+     * We iterate the snapshot (not the hash), so we can safely remove entries now.
+     * BUT: DO NOT destroy pools yet! The caller may still need to process completed streams
+     * that were allocated from those pools. Pool destruction must happen later.
+     * ALSO: Only clean up client bidirectional streams (request streams). Control streams and
+     * server-initiated streams live for the entire connection. */
+    int done_but_has_ssl = 0;
+    for (int i = 0; i < snapshot->nelts; i++)
+    {
+        h3_stream* h3s = ((h3_stream**)snapshot->elts)[i];
+        if (h3s)
+        {
+            /* Only clean up client-initiated bidirectional streams (request streams) */
+            if (h3s->is_bidi && !H3_SID_IS_SERVER(h3s->stream_id))
+            {
+                if (h3s->done && h3s->ssl_stream == NULL && h3s->dispatched)
+                {
+                    /* Stream was closed, SSL freed, AND already dispatched/processed - safe to clean up now */
+                    apr_hash_set(session->streams, &h3s->stream_id, sizeof(h3s->stream_id), NULL);
+                    if (h3s->pool)
+                    {
+                        apr_pool_destroy(h3s->pool);
+                    }
+                }
+                else if (h3s->done && h3s->ssl_stream != NULL)
+                {
+                    done_but_has_ssl++;
+                }
+            }
+        }
+    }
+
+    /* Only log if there's a problem: streams that should have been cleaned up but weren't */
+    if (done_but_has_ssl > 0)
+    {
+        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, session->s,
+                    "Stream cleanup issue: %d streams marked done but still have ssl_stream set (total=%d, remaining=%d)",
+                    done_but_has_ssl, total_streams, apr_hash_count(session->streams));
+    }
+
+    return result;
 }

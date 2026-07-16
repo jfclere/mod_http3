@@ -28,6 +28,14 @@
 #include "h3_session.h"
 
 /**
+ * Result of drain_ready_streams.
+ */
+typedef struct {
+    apr_array_header_t* completed; /* Array of h3_stream* ready to dispatch */
+    int data_read;                  /* 1 if any data was read from any stream */
+} drain_result_t;
+
+/**
  * Drive the nghttp3 connection: build any pending outbound frames and write
  * them onto the QUIC connection. Safe to call repeatedly; no-ops if there
  * is nothing to send.
@@ -46,14 +54,14 @@ h3_stream* track_stream(h3_session* session, int64_t sid, SSL* stream_ssl);
 
 /**
  * Read whatever's available on the underlying SSL stream and drive the
- * matching nghttp3 stream state machine. Returns the set of stream ids that
+ * matching nghttp3 stream state machine. Returns the set of streams that
  * became fully readable (HEADERS+DATA complete) and ready for the request
- * dispatcher.
+ * dispatcher, along with a flag indicating if any data was read.
  * @param session   The session.
  * @param loop_pool Scratch pool for per-iteration allocations.
- * @return Array of int64_t stream ids (possibly empty), allocated in loop_pool.
+ * @return drain_result_t with completed streams and data_read flag.
  */
-apr_array_header_t* drain_ready_streams(h3_session* session, apr_pool_t* loop_pool);
+drain_result_t drain_ready_streams(h3_session* session, apr_pool_t* loop_pool);
 
 /**
  * Look up an existing h3_stream by stream id.
