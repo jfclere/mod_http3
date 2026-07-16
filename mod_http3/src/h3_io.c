@@ -255,6 +255,7 @@ static apr_status_t spawn_serviced_session(h3_io_t* io, SSL* conn)
         {
             apr_allocator_destroy(allocator);
         }
+        SSL_free(conn);
         return APR_EGENERAL;
     }
     apr_allocator_owner_set(allocator, session_pool);
@@ -307,27 +308,24 @@ void progress_pending_handshakes(h3_io_t* io)
         do
         {
             int rv = 0;
-            if (SSL_is_init_finished(conn))
+
+            if (!tick_engine(io->ssl_listener))
+            {
+                rv = -1;
+            }
+            else if (SSL_get_shutdown(conn))
+            {
+                rv = -1;
+            }
+            else if (SSL_is_init_finished(conn))
             {
                 rv = 1;
             }
-            if (SSL_get_shutdown(conn) || !tick_engine(io->ssl_listener))
-            {
-                rv = -1;
-            }
-            if (SSL_get_shutdown(conn))
-            {
-                rv = -1;
-            }
-            rv = SSL_is_init_finished(conn) ? 1 : 0;
 
             if (rv == 1)
             {
                 ap_log_error(APLOG_MARK, APLOG_INFO, 0, io->server, "QUIC handshake complete");
-                if (spawn_serviced_session(io, conn) != APR_SUCCESS)
-                {
-                    SSL_free(conn);
-                }
+                spawn_serviced_session(io, conn);
                 remove_pending_handshake(io, i, 0);
                 finished = 1;
                 break;
