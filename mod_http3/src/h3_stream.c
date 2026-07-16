@@ -183,12 +183,15 @@ apr_array_header_t* drain_ready_streams(h3_session* session, apr_pool_t* loop_po
     apr_array_header_t* completed = apr_array_make(loop_pool, 4, sizeof(h3_stream*));
 
     apr_array_header_t* snapshot = apr_array_make(loop_pool, 8, sizeof(h3_stream*));
-    for (apr_hash_index_t* hi = apr_hash_first(NULL, session->streams); hi; hi = apr_hash_next(hi))
+    if (session->streams)
     {
-        h3_stream* h3s = apr_hash_this_val(hi);
-        if (h3s)
+        for (apr_hash_index_t* hi = apr_hash_first(loop_pool, session->streams); hi; hi = apr_hash_next(hi))
         {
-            *(h3_stream**)apr_array_push(snapshot) = h3s;
+            h3_stream* h3s = apr_hash_this_val(hi);
+            if (h3s)
+            {
+                *(h3_stream**)apr_array_push(snapshot) = h3s;
+            }
         }
     }
 
